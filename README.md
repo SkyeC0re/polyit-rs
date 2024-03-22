@@ -18,7 +18,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-poly_it = "0.1.2"
+poly_it = "0.1.3"
 ```
 
 ## no_std environments

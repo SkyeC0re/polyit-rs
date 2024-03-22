@@ -1,13 +1,13 @@
 [package]
 name = "poly_it"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 rust-version = "1.70.0"
-authors = ["gifnksm <makoto.nksm+github@gmail.com>"]
+authors = ["Christoff van Zyl <stoffel1997@gmail.com>"]
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/gifnksm/polynomial-rs"
-description = "A library for manipulating polynomials"
+repository = "https://github.com/SkyeC0re/polyit-rs"
+description = "A no-std library for manipulating polynomials with iterator support and minimal allocation."
 
 [badges]
 maintenance = { status = "passively-maintained" }
