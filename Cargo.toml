@@ -26,3 +26,6 @@ pre-release-replacements = [
     { file = "README.md", search = "polynomial = \"[0-9\\.]+\"", replace = "{{crate_name}} = \"{{version}}\"" },
     { file = "README.md", search = "polynomial = \\{version = \"[0-9\\.]+\"", replace = "{{crate_name}} = {version = \"{{version}}\"" },
 ]
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--html-in-header", "./src/docs-header.html"]
