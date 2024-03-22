@@ -1,5 +1,105 @@
-//! A library for manipulating polynomials.
-#![cfg_attr(not(feature = "std"), no_std)]
+//! # poly_it
+//! A no-std library for manipulating polynomials with iterator support and minimal allocation.
+//!
+//! At the end of the day the classical representation method for the polynomial is
+//! it coefficients and this library leverages this by means of clone-able iterators.  
+//! Take this example case:
+//! ```
+//! extern crate poly_it;
+//! use poly_it::{Polynomial, Coverable};
+//!
+//! pub fn main() {
+//!     let p1 = Polynomial::new(vec![1, 2, 3]);
+//!     let p2 = Polynomial::new(vec![3, 2, 1]);
+//!     let arr_iter = [1, 2];
+//!     let vec_iter = vec![1, 2, 3];
+//!
+//!     assert_eq!(
+//!         format!("{}", p2 - &p1),
+//!         "2 + -2x^2"
+//!     );
+//!
+//!     assert_eq!(
+//!         format!("{}", p1.clone() + arr_iter.into_iter().covered()),
+//!         "2 + 4x + 3x^2"
+//!     );
+//!
+//!     assert_eq!(
+//!         format!("{}", p1 * vec_iter.iter().copied().covered()),
+//!         "1 + 4x + 10x^2 + 12x^3 + 9x^4"
+//!     );
+//! }
+//! ```
+//!
+//! This example illustrates several things:
+//! 1. The use `into_iter()` and `iter().copied()` type iterators
+//! 2. The covering mechanism used by this crate
+//! 3. Using operations with owned or referenced polynomials.
+//! 4. That `+ -` is possibly heretical.
+//!
+//! As to the fourth point, this has to do with future proofing in cases where the underlying numerical type
+//! might not have ordering, but for the first three, see below for a quick summary as to the how and the why.
+//!
+//! ## Iterator Support
+//!
+//! ### `into_iter()` vs `iter().cloned()`/`iter().copied()`:
+//!
+//! Many iterable types gives the user the option between using `into_iter()` to produce elements of
+//! type some type `T` or `iter()` to produce `&T`. The issue with the former is that for iterable types which are expensive
+//! to clone, this hinders performance as each time the iterator is cloned, the underlying data is cloned with it (as is the case
+//! with [Vec](struct@Vec)). For these types the user is urged to use the `iter().cloned()`/`iter().copied()` pattern instead
+//! such that the underlying iterable type gets reused on a clone of the iterator.
+//!
+//! **Caveats**
+//!
+//! This crate assumes the following for any iterator passed to it during a function call:
+//! 1. The iterator is fixed for the duration of the function. That is to say that it will always produce the
+//!    same list of elements regardless of how long the function waits before iterating over it.
+//! 2. Any clones of the iterator will produce the same elements as the iterator.
+//!
+//! ### Covered iterators
+//!
+//! Rust allows the following implementation of a trait:
+//! ```text
+//! impl ForeignTrait<LocalType> for ForeignType
+//! ```
+//! but not:
+//! ```text
+//! impl<T: SomeTrait> ForeignTrait<LocalType> for T
+//! ```
+//! (see [this issue](https://github.com/rust-lang/rust/issues/63599) for more details). This means that it
+//! is impossible to implement binary operations with iterators on the left hand side. One such example would be:
+//! ```text
+//! impl<T: Add<T, Output=T>, I: Iterator<Item=T>> Add<Polynomial<T>> for I
+//! ```
+//! even though we could manually implement (in a similar fashion as
+//! [nalgedra  did for the primitive numeric types](https://docs.rs/nalgebra/latest/src/nalgebra/base/ops.rs.html#548)):
+//! ```text
+//! impl<T: Add<T, Output=T>> Add<Polynomial<T>> for SomeConcreteIterator
+//! ```
+//! for all iterators and nested and chained iterator combinations...
+//!
+//! We will not be doing this.
+//!
+//! Instead we propose a simple covering mechanism, such that by wrapping the iterators in a local type (see [Covered](struct@Covered))
+//! we are able to implement:
+//! ```text
+//! impl<T: Add<T, Output=T>, I: Iterator<Item=T>> Add<Polynomial<T>> for LocalWrapperType<I>
+//! ```
+//!
+//! Note: Although not required we also enforce this when the Polynomial is the LHS for consistency.
+//!
+//! ## Minimal Allocation
+//!
+//! This crate attempts to minimize allocations by reusing the underlying allocated space of the polynomials when an
+//! owned [Polynomial](struct@Polynomial) is passed to a unary or binary operation. If more than one owned polynomial is passed,
+//! as would be the case with:
+//! ```text
+//! let x = Polynomial::new(vec![1, 2, 3]) * Polynomial::new(vec![3, 2, 1]);
+//! ```
+//! the polynomial whose data vector has the highest capacity will be selected. If a new allocation is desired, use
+//! references.
+#![no_std]
 #![warn(bad_style)]
 #![warn(missing_docs)]
 #![warn(trivial_casts)]
@@ -10,20 +110,58 @@
 #![warn(unused_qualifications)]
 #![warn(unused_results)]
 
-use core::ops::{Add, Div, Mul, Neg, Sub};
-use core::{cmp, fmt};
-use num_traits::{FromPrimitive, One, Zero};
-
-#[cfg(not(feature = "std"))]
 extern crate alloc;
+use alloc::{vec, vec::Vec};
+use core::fmt::Display;
+use core::ops::{Add, Deref, DerefMut, Div, Mul, Neg, Sub};
+use core::{fmt, mem};
+use num_traits::{Float, FloatConst, FromPrimitive, One, Zero};
 
-#[cfg(not(feature = "std"))]
-use alloc::{
-    format,
-    string::{String, ToString},
-    vec,
-    vec::Vec,
-};
+pub use num_traits;
+
+/// A struct for covering generic objects under this crate.
+/// Currently it is not possible to implement the following in Rust:  
+/// `impl<T> ForeignTrait<LocalType> for T`  
+/// but it is possible to implement:  
+/// `impl<T> ForeignTrait<LocalType> for LocalType<T>`  
+#[repr(transparent)]
+pub struct Covered<T>(pub T);
+
+impl<T> Deref for Covered<T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for Covered<T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+/// A convenience trait for the [Covered](struct@Covered) which
+/// allows any sized type to be covered under this crate by calling [covered](fn@Coverable::covered)
+/// on it.
+pub trait Coverable {
+    /// Covers an object under this crate.
+    fn covered(self) -> Covered<Self>
+    where
+        Self: Sized;
+}
+
+impl<T: Sized> Coverable for T {
+    #[inline(always)]
+    fn covered(self) -> Covered<Self>
+    where
+        Self: Sized,
+    {
+        Covered(self)
+    }
+}
 
 /// A polynomial.
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -33,28 +171,277 @@ pub struct Polynomial<T> {
 }
 
 impl<T: Zero> Polynomial<T> {
-    /// Creates a new `Polynomial` from a `Vec` of coefficients.
+    /// Creates a new `Polynomial` from a `Vec` of coefficients. Automatically
+    /// trims all trailing zeroes from the data.
     ///
     /// # Examples
     ///
     /// ```
-    /// use polynomial::Polynomial;
-    /// let poly = Polynomial::new(vec![1, 2, 3]);
-    /// assert_eq!("1+2*x+3*x^2", poly.pretty("x"));
+    /// use poly_it::Polynomial;
+    /// let poly = Polynomial::new(vec![1., 2., 3., 0.]);
+    /// assert_eq!("1.00 + 2.00x + 3.00x^2", format!("{:.2}", poly));
     /// ```
     #[inline]
-    pub fn new(mut data: Vec<T>) -> Self {
-        while let Some(true) = data.last().map(|x| x.is_zero()) {
-            let _ = data.pop();
+    pub fn new(data: Vec<T>) -> Self {
+        let mut p = Self { data };
+        p.trim();
+        p
+    }
+
+    /// Trims all trailing zeros from the polynomial's coefficients.
+    /// # Examples
+    ///
+    /// ```
+    /// use poly_it::Polynomial;
+    /// let mut poly = Polynomial::new(vec![1, 0, -1]) + Polynomial::new(vec![0, 0, 1]);
+    /// poly.trim();
+    /// assert_eq!(poly.coeffs(), &[1]);
+    /// ```
+    #[inline]
+    pub fn trim(&mut self) {
+        while let Some(true) = self.data.last().map(T::is_zero) {
+            let _ = self.data.pop();
         }
-        Self { data }
+    }
+
+    /// Get an immutable reference to the polynomial's coefficients.
+    #[inline]
+    pub fn coeffs(&self) -> &[T] {
+        &self.data
+    }
+
+    /// Get a mutable reference to the polynomial's coefficients.
+    #[inline]
+    pub fn coeffs_mut(&mut self) -> &mut [T] {
+        &mut self.data
+    }
+}
+
+impl<T> Into<Vec<T>> for Polynomial<T> {
+    #[inline]
+    fn into(self) -> Vec<T> {
+        self.data
+    }
+}
+
+impl<T: Display> Display for Polynomial<T>
+where
+    T: Zero,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut previous_nonzero_term = false;
+        for i in 0..self.data.len() {
+            let ci = &self.data[i];
+            if ci.is_zero() {
+                continue;
+            }
+            if i == 0 {
+                ci.fmt(f)?;
+            } else {
+                if previous_nonzero_term {
+                    f.write_str(" + ")?;
+                }
+                ci.fmt(f)?;
+                f.write_str("x")?;
+                if i > 1 {
+                    f.write_fmt(format_args!("^{}", i))?;
+                }
+            }
+            previous_nonzero_term = true;
+        }
+        if !previous_nonzero_term {
+            T::zero().fmt(f)?;
+        }
+
+        Ok(())
     }
 }
 
 impl<T> Polynomial<T>
 where
-    T: One + Zero + Clone + Neg<Output = T> + Div<Output = T> + Mul<Output = T> + Sub<Output = T>,
+    T: Zero
+        + One
+        + Add<T, Output = T>
+        + Neg<Output = T>
+        + Sub<T, Output = T>
+        + Mul<T, Output = T>
+        + Div<T, Output = T>
+        + Clone,
 {
+    /// Generates the polynomial $P(x)$ that fits a number of points `N` in a least squares sense which minimizes:
+    /// $$\sum_{i=1}^N\left[P(x_i) - y_i\right]^2$$
+    ///
+    /// Returns `None` if a unique solution does not exist (such as if `deg < N + 1`).
+    ///
+    /// Based on:
+    /// [P. A. Gorry, General least-squares smoothing and differentiation by the convolution (Savitzky-Golay) method, Anal. Chem., vol. 62, no. 6, pp. 570-573, Mar. 1990.](https://pubs.acs.org/doi/10.1021/ac00205a007)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use poly_it::Polynomial;
+    /// // Noisy second degree polynomial data
+    /// let xys: Vec<(f64, f64)> = (0..100).into_iter().map(|x| {
+    ///     let xf = x as f64;
+    ///     (xf, 1. + 2. * xf + 3. * xf * xf + xf.sin())
+    /// }).collect();
+    /// let poly = Polynomial::least_squares_fit(
+    ///     2,
+    ///     xys.iter().copied()
+    ///  ).unwrap();
+    /// println!("{:.3}", poly);
+    /// ```
+    #[inline(always)]
+    pub fn least_squares_fit(
+        deg: usize,
+        samples: impl Iterator<Item = (T, T)> + Clone,
+    ) -> Option<Self> {
+        Self::least_squares_fit_weighted(deg, samples.map(|(x, y)| (x, y, T::one())))
+    }
+
+    /// Adapted from [least_squares_fit](fn@Polynomial::least_squares_fit) to allow for non-uniform fitting weights.
+    /// Generates the polynomial $P(x)$ that fits a number of points `N` in a least squares sense which minimizes:
+    /// $$\sum_{i=1}^N w_i \left[P(x_i) - y_i\right]^2$$
+    /// when $W = \sum_{i=1}^N w_i$ is positive. If $W$ is negative it will instead maximize the above value.
+    /// No solution exists if $W = 0$.
+    ///
+    /// Returns `None` if a unique solution does not exist (such as if `deg < N + 1`).
+    /// # Examples
+    ///
+    /// ```
+    /// use poly_it::Polynomial;
+    /// // Noisy second degree polynomial data weighted inversly by its deviation
+    /// let xyws: Vec<(f64, f64, f64)> = (0..100).map(|x| {
+    ///     let xf = x as f64;
+    ///     return (xf, 1. + 2. * xf + 3. * xf * xf + xf.sin(), 1.0 - xf.sin().abs())
+    /// }).collect();
+    /// let poly = Polynomial::least_squares_fit_weighted(
+    ///     2,
+    ///     xyws.iter().copied()
+    ///     ).unwrap();
+    /// println!("{:.3}", poly);
+    /// ```
+    pub fn least_squares_fit_weighted(
+        deg: usize,
+        samples: impl Iterator<Item = (T, T, T)> + Clone,
+    ) -> Option<Self> {
+        let (mut d_0, gamma_0, mut b_0, data_len) = samples.clone().fold(
+            (T::zero(), T::zero(), T::zero(), 0usize),
+            |mut acc, (xi, yi, wi)| {
+                acc.0 = acc.0 + wi.clone() * yi;
+                acc.1 = acc.1 + wi.clone();
+                acc.2 = acc.2 + wi * xi;
+                acc.3 += 1;
+                acc
+            },
+        );
+
+        if data_len < deg + 1 || gamma_0.is_zero() {
+            return None;
+        }
+
+        b_0 = b_0 / gamma_0.clone();
+        d_0 = d_0 / gamma_0.clone();
+
+        let mut p_data = Vec::with_capacity(deg + 1);
+        p_data.push(d_0);
+
+        if deg == 0 {
+            return Some(Polynomial::new(p_data));
+        }
+
+        let mut p_km1_offset = data_len;
+        let mut p_k_offset = data_len + (deg + 1);
+        // Stores x_i^{k + 1} data, P_k data and P_{k-1} data.
+        let mut computation_data = Vec::with_capacity(data_len + ((deg + 1) << 1));
+        computation_data.extend(samples.clone().map(|(xi, _, _)| xi));
+        computation_data.extend((0usize..(deg + 1) << 1).map(|_| T::zero()));
+
+        computation_data[p_k_offset] = T::one();
+
+        let eval_slice = |slice: &[T], x: T| -> T {
+            slice
+                .into_iter()
+                .rev()
+                .cloned()
+                .reduce(|acc, c_i| x.clone() * acc + c_i)
+                .unwrap_or(T::zero())
+        };
+
+        let mut gamma_k = gamma_0;
+        let mut b_k = b_0;
+        let mut minus_c_k = T::zero();
+        let mut kp1 = 1;
+
+        loop {
+            p_data.push(Zero::zero());
+
+            // Overwrite p_{k-1} with p_{k+1}
+            for i in 0..(kp1 - 1) {
+                computation_data[p_km1_offset + i] =
+                    minus_c_k.clone() * computation_data[p_km1_offset + i].clone();
+            }
+            for i in 0..kp1 {
+                computation_data[p_km1_offset + i] = computation_data[p_km1_offset + i].clone()
+                    - b_k.clone() * computation_data[p_k_offset + i].clone();
+                computation_data[p_km1_offset + i + 1] = computation_data[p_km1_offset + i + 1]
+                    .clone()
+                    + computation_data[p_k_offset + i].clone();
+            }
+
+            let (mut d_kp1, gamma_kp1, mut b_kp1) = samples.clone().enumerate().fold(
+                (T::zero(), T::zero(), T::zero()),
+                |mut acc, (i, (xi, yi, wi))| {
+                    let weighted_eval = wi
+                        * eval_slice(
+                            &computation_data[p_km1_offset..(p_km1_offset + kp1 + 1)],
+                            xi.clone(),
+                        );
+
+                    acc.0 = acc.0 + yi * weighted_eval.clone();
+                    let mut xi_powk = computation_data[i].clone();
+                    acc.1 = acc.1 + xi_powk.clone() * weighted_eval.clone();
+
+                    // Update x_i^k to x_i^{k+1}
+                    xi_powk = xi_powk * xi;
+                    computation_data[i] = xi_powk.clone();
+
+                    acc.2 = acc.2 + xi_powk * weighted_eval;
+                    acc
+                },
+            );
+
+            if gamma_kp1.is_zero() {
+                return None;
+            }
+
+            d_kp1 = d_kp1 / gamma_kp1.clone();
+
+            for i in 0..(kp1 + 1) {
+                p_data[i] =
+                    p_data[i].clone() + d_kp1.clone() * computation_data[p_km1_offset + i].clone();
+            }
+
+            if kp1 == deg {
+                break;
+            }
+
+            // Delay the remaining work left for b_{k+1} until it is certain to be needed.
+            b_kp1 = b_kp1 / gamma_kp1.clone() + computation_data[p_km1_offset + kp1 - 1].clone();
+
+            kp1 += 1;
+            b_k = b_kp1;
+            minus_c_k = -(gamma_kp1.clone() / gamma_k);
+            gamma_k = gamma_kp1;
+
+            // Reorient the offsets
+            mem::swap(&mut p_k_offset, &mut p_km1_offset);
+        }
+        let mut p = Polynomial::new(p_data);
+        p.trim();
+        Some(p)
+    }
+
     /// Creates the [Lagrange polynomial] that fits a number of points.
     ///
     /// [Lagrange polynomial]: https://en.wikipedia.org/wiki/Lagrange_polynomial
@@ -64,20 +451,24 @@ where
     /// # Examples
     ///
     /// ```
-    /// use polynomial::Polynomial;
-    /// let poly = Polynomial::lagrange(&[1, 2, 3], &[10, 40, 90]).unwrap();
-    /// println!("{}", poly.pretty("x"));
-    /// assert_eq!("10*x^2", poly.pretty("x"));
+    /// use poly_it::Polynomial;
+    /// let poly = Polynomial::<f64>::lagrange(
+    ///     [1., 2., 3.].iter()
+    ///     .copied()
+    ///     .zip([10., 40., 90.].iter().copied())
+    /// ).unwrap();
+    /// assert_eq!("10.0x^2", format!("{:.1}",poly));
     /// ```
-    #[inline]
-    pub fn lagrange(xs: &[T], ys: &[T]) -> Option<Self> {
+    pub fn lagrange(samples: impl Iterator<Item = (T, T)> + Clone) -> Option<Self> {
         let mut res = Polynomial::new(vec![Zero::zero()]);
-        for ((i, x), y) in (0..).zip(xs.iter()).zip(ys.iter()) {
-            let mut p: Polynomial<T> = Polynomial::new(vec![T::one()]);
+        let mut li = Polynomial::new(Vec::new());
+        for (i, (x, y)) in samples.clone().enumerate() {
+            li.data.clear();
+            li.data.push(T::one());
             let mut denom = T::one();
-            for (j, x2) in (0..).zip(xs.iter()) {
+            for (j, (x2, _)) in samples.clone().enumerate() {
                 if i != j {
-                    p = p * &Polynomial::new(vec![-x2.clone(), T::one()]);
+                    li = li * [-x2.clone(), T::one()].into_iter().covered();
                     let diff = x.clone() - x2.clone();
                     if diff.is_zero() {
                         return None;
@@ -86,66 +477,58 @@ where
                 }
             }
             let scalar = y.clone() / denom;
-            res = res + p * &Polynomial::<T>::new(vec![scalar]);
+            li = li * [scalar].into_iter().covered();
+            res = res + &li;
         }
+        res.trim();
         Some(res)
     }
 }
 
 impl<T> Polynomial<T>
 where
-    T: One
-        + Zero
-        + Clone
-        + Neg<Output = T>
-        + Div<Output = T>
-        + Mul<Output = T>
-        + Sub<Output = T>
-        + FromPrimitive,
+    T: Zero + One + FloatConst + Float + FromPrimitive,
 {
-    /// [Chebyshev approximation] fits a function to a polynomial over a range of values.
+    /// [Chebyshev approximation] fits a function $f(x)$ over to a polynomial by taking $n-1$
+    /// samples of $f$ on some interval $[a, b]$.
     ///
     /// [Chebyshev approximation]: https://en.wikipedia.org/wiki/Approximation_theory#Chebyshev_approximation
     ///
     /// This attempts to minimize the maximum error.
     ///
-    /// Retrurns `None` if `n < 1` or `xmin >= xmax`.
+    /// Returns `None` if $n < 1$ or if the Gauss–Chebyshev zeros collapse in $[a, b]$ due to
+    /// floating point inaccuracies.
     ///
     /// # Examples
     ///
     /// ```
-    /// use polynomial::Polynomial;
+    /// use poly_it::Polynomial;
     /// use std::f64::consts::PI;
-    /// let p = Polynomial::chebyshev(&f64::sin, 7, -PI/4., PI/4.).unwrap();
+    /// let p = Polynomial::chebyshev(&f64::sin, 7, PI/4., -PI/4.).unwrap();
     /// assert!((p.eval(0.) - (0.0_f64).sin()).abs() < 0.0001);
     /// assert!((p.eval(0.1) - (0.1_f64).sin()).abs() < 0.0001);
     /// assert!((p.eval(-0.1) - (-0.1_f64).sin()).abs() < 0.0001);
     /// ```
     #[inline]
-    #[cfg(any(feature = "std", feature = "libm"))]
-    pub fn chebyshev<F: Fn(T) -> T>(f: &F, n: usize, xmin: f64, xmax: f64) -> Option<Self> {
-        #[cfg(feature = "std")]
-        let cos = f64::cos;
-        #[cfg(not(feature = "std"))]
-        let cos = num_traits::Float::cos;
-
-        if n < 1 || xmin >= xmax {
+    pub fn chebyshev<F: Fn(T) -> T>(f: &F, n: usize, a: T, b: T) -> Option<Self> {
+        if n < 1 {
             return None;
         }
 
-        let mut xs = Vec::new();
-        for i in 0..n {
-            use core::f64::consts::PI;
-            let x = T::from_f64(
-                (xmax + xmin) * 0.5
-                    + (xmin - xmax) * 0.5 * cos((2 * i + 1) as f64 * PI / (2 * n) as f64),
-            )
-            .unwrap();
-            xs.push(x);
+        let mut samples = Vec::with_capacity(n);
+
+        let pi_over_n = T::PI() / T::from(n)?;
+        let two = T::one() + T::one();
+        let half = T::one() / two;
+        let x_avg = (b + a) * half;
+        let x_half_delta = (b - a).abs() * half;
+
+        for k in 0..n {
+            let x = x_avg - x_half_delta * T::cos((T::from(k)? + half) * pi_over_n);
+            samples.push((x, f(x)));
         }
 
-        let ys: Vec<T> = xs.iter().map(|x| f(x.clone())).collect();
-        Polynomial::lagrange(&xs[0..], &ys[0..])
+        Polynomial::lagrange(samples.iter().copied())
     }
 }
 
@@ -155,7 +538,7 @@ impl<T: Zero + Mul<Output = T> + Clone> Polynomial<T> {
     /// # Examples
     ///
     /// ```
-    /// use polynomial::Polynomial;
+    /// use poly_it::Polynomial;
     /// let poly = Polynomial::new(vec![1, 2, 3]);
     /// assert_eq!(1, poly.eval(0));
     /// assert_eq!(6, poly.eval(1));
@@ -165,247 +548,285 @@ impl<T: Zero + Mul<Output = T> + Clone> Polynomial<T> {
     pub fn eval(&self, x: T) -> T {
         let mut result: T = Zero::zero();
         for n in self.data.iter().rev() {
-            result = n.clone() + result * x.clone();
+            result = result * x.clone() + n.clone();
         }
         result
     }
 }
 
-impl<T> Polynomial<T> {
-    /// Gets the slice of internal data.
-    #[inline]
-    pub fn data(&self) -> &[T] {
-        &self.data
-    }
-}
-
-impl<T> Polynomial<T>
-where
-    T: Zero + One + Eq + Neg<Output = T> + Ord + fmt::Display + Clone,
-{
-    /// Pretty prints the polynomial.
-    pub fn pretty(&self, x: &str) -> String {
-        if self.is_zero() {
-            return "0".to_string();
-        }
-
-        let one = One::one();
-        let mut s = Vec::new();
-        for (i, n) in self.data.iter().enumerate() {
-            // output n*x^i / -n*x^i
-            if n.is_zero() {
-                continue;
-            }
-
-            let term = if i.is_zero() {
-                n.to_string()
-            } else if i == 1 {
-                if (*n) == one {
-                    x.to_string()
-                } else if (*n) == -one.clone() {
-                    format!("-{}", x)
-                } else {
-                    format!("{}*{}", n, x)
-                }
-            } else if (*n) == one {
-                format!("{}^{}", x, i)
-            } else if (*n) == -one.clone() {
-                format!("-{}^{}", x, i)
-            } else {
-                format!("{}*{}^{}", n, x, i)
-            };
-
-            if !s.is_empty() && (*n) > Zero::zero() {
-                s.push("+".to_string());
-            }
-            s.push(term);
-        }
-
-        s.concat()
-    }
-}
-
 impl<T> Neg for Polynomial<T>
 where
-    T: Neg + Zero + Clone,
-    <T as Neg>::Output: Zero,
+    T: Neg<Output = T> + Clone,
 {
-    type Output = Polynomial<<T as Neg>::Output>;
+    type Output = Polynomial<T>;
 
     #[inline]
-    fn neg(self) -> Polynomial<<T as Neg>::Output> {
-        -&self
+    fn neg(mut self) -> Polynomial<T> {
+        self.data.iter_mut().for_each(|c| *c = -c.clone());
+        self
     }
 }
 
 impl<'a, T> Neg for &'a Polynomial<T>
 where
-    T: Neg + Zero + Clone,
-    <T as Neg>::Output: Zero,
+    T: Neg<Output = T> + Zero + Clone,
 {
-    type Output = Polynomial<<T as Neg>::Output>;
+    type Output = Polynomial<T>;
 
     #[inline]
-    fn neg(self) -> Polynomial<<T as Neg>::Output> {
-        Polynomial::new(self.data.iter().map(|x| -x.clone()).collect())
+    fn neg(self) -> Polynomial<T> {
+        -self.clone()
     }
 }
 
-macro_rules! forward_val_val_binop {
+macro_rules! forward_ref_iter_binop {
     (impl $imp:ident, $method:ident) => {
-        impl<Lhs, Rhs> $imp<Polynomial<Rhs>> for Polynomial<Lhs>
+        impl<'a, T, I> $imp<Covered<I>> for &'a Polynomial<T>
         where
-            Lhs: Zero + $imp<Rhs> + Clone,
-            Rhs: Zero + Clone,
-            <Lhs as $imp<Rhs>>::Output: Zero,
+            T: 'a + $imp<T, Output = T> + Zero + Clone,
+            I: Iterator<Item = T> + Clone,
         {
-            type Output = Polynomial<<Lhs as $imp<Rhs>>::Output>;
+            type Output = Polynomial<T>;
 
-            #[inline]
-            fn $method(self, other: Polynomial<Rhs>) -> Polynomial<<Lhs as $imp<Rhs>>::Output> {
-                (&self).$method(&other)
+            #[inline(always)]
+            fn $method(self, other: Covered<I>) -> Polynomial<T> {
+                $imp::$method(self.clone(), other)
             }
         }
     };
 }
 
-macro_rules! forward_ref_val_binop {
+macro_rules! forward_iter_ref_binop {
     (impl $imp:ident, $method:ident) => {
-        impl<'a, Lhs, Rhs> $imp<Polynomial<Rhs>> for &'a Polynomial<Lhs>
+        impl<'a, T, I> $imp<&'a Polynomial<T>> for Covered<I>
         where
-            Lhs: Zero + $imp<Rhs> + Clone,
-            Rhs: Zero + Clone,
-            <Lhs as $imp<Rhs>>::Output: Zero,
+            T: 'a + $imp<T, Output = T> + Zero + Clone,
+            I: Iterator<Item = T> + Clone,
         {
-            type Output = Polynomial<<Lhs as $imp<Rhs>>::Output>;
+            type Output = Polynomial<T>;
 
-            #[inline]
-            fn $method(self, other: Polynomial<Rhs>) -> Polynomial<<Lhs as $imp<Rhs>>::Output> {
-                self.$method(&other)
+            #[inline(always)]
+            fn $method(self, other: &'a Polynomial<T>) -> Polynomial<T> {
+                $imp::$method(self, other.clone())
             }
         }
     };
 }
 
-macro_rules! forward_val_ref_binop {
+macro_rules! forward_iter_val_val_binop {
     (impl $imp:ident, $method:ident) => {
-        impl<'a, Lhs, Rhs> $imp<&'a Polynomial<Rhs>> for Polynomial<Lhs>
+        impl<T> $imp<Polynomial<T>> for Polynomial<T>
         where
-            Lhs: Zero + $imp<Rhs> + Clone,
-            Rhs: Zero + Clone,
-            <Lhs as $imp<Rhs>>::Output: Zero,
+            T: $imp<T, Output = T> + Zero + Clone,
         {
-            type Output = Polynomial<<Lhs as $imp<Rhs>>::Output>;
+            type Output = Polynomial<T>;
 
-            #[inline]
-            fn $method(self, other: &Polynomial<Rhs>) -> Polynomial<<Lhs as $imp<Rhs>>::Output> {
-                (&self).$method(other)
-            }
-        }
-    };
-}
-
-macro_rules! forward_all_binop {
-    (impl $imp:ident, $method:ident) => {
-        forward_val_val_binop!(impl $imp, $method);
-        forward_ref_val_binop!(impl $imp, $method);
-        forward_val_ref_binop!(impl $imp, $method);
-    };
-}
-
-forward_all_binop!(impl Add, add);
-
-impl<'a, 'b, Lhs, Rhs> Add<&'b Polynomial<Rhs>> for &'a Polynomial<Lhs>
-where
-    Lhs: Zero + Add<Rhs> + Clone,
-    Rhs: Zero + Clone,
-    <Lhs as Add<Rhs>>::Output: Zero,
-{
-    type Output = Polynomial<<Lhs as Add<Rhs>>::Output>;
-
-    fn add(self, other: &Polynomial<Rhs>) -> Polynomial<<Lhs as Add<Rhs>>::Output> {
-        let max_len = cmp::max(self.data.len(), other.data.len());
-        let min_len = cmp::min(self.data.len(), other.data.len());
-
-        let mut sum = Vec::with_capacity(max_len);
-        for i in 0..min_len {
-            sum.push(self.data[i].clone() + other.data[i].clone());
-        }
-
-        if self.data.len() <= other.data.len() {
-            for i in min_len..max_len {
-                sum.push(num_traits::zero::<Lhs>() + other.data[i].clone());
-            }
-        } else {
-            for i in min_len..max_len {
-                sum.push(self.data[i].clone() + num_traits::zero::<Rhs>());
-            }
-        }
-
-        Polynomial::new(sum)
-    }
-}
-
-forward_all_binop!(impl Sub, sub);
-
-impl<'a, 'b, Lhs, Rhs> Sub<&'b Polynomial<Rhs>> for &'a Polynomial<Lhs>
-where
-    Lhs: Zero + Sub<Rhs> + Clone,
-    Rhs: Zero + Clone,
-    <Lhs as Sub<Rhs>>::Output: Zero,
-{
-    type Output = Polynomial<<Lhs as Sub<Rhs>>::Output>;
-
-    fn sub(self, other: &Polynomial<Rhs>) -> Polynomial<<Lhs as Sub<Rhs>>::Output> {
-        let min_len = cmp::min(self.data.len(), other.data.len());
-        let max_len = cmp::max(self.data.len(), other.data.len());
-
-        let mut sub = Vec::with_capacity(max_len);
-        for i in 0..min_len {
-            sub.push(self.data[i].clone() - other.data[i].clone());
-        }
-        if self.data.len() <= other.data.len() {
-            for i in min_len..max_len {
-                sub.push(num_traits::zero::<Lhs>() - other.data[i].clone())
-            }
-        } else {
-            for i in min_len..max_len {
-                sub.push(self.data[i].clone() - num_traits::zero::<Rhs>())
-            }
-        }
-        Polynomial::new(sub)
-    }
-}
-
-forward_all_binop!(impl Mul, mul);
-
-impl<'a, 'b, Lhs, Rhs> Mul<&'b Polynomial<Rhs>> for &'a Polynomial<Lhs>
-where
-    Lhs: Zero + Mul<Rhs> + Clone,
-    Rhs: Zero + Clone,
-    <Lhs as Mul<Rhs>>::Output: Zero,
-{
-    type Output = Polynomial<<Lhs as Mul<Rhs>>::Output>;
-
-    fn mul(self, other: &Polynomial<Rhs>) -> Polynomial<<Lhs as Mul<Rhs>>::Output> {
-        if self.is_zero() || other.is_zero() {
-            return Polynomial::new(vec![]);
-        }
-
-        let slen = self.data.len();
-        let olen = other.data.len();
-        let prod = (0..slen + olen - 1)
-            .map(|i| {
-                let mut p = num_traits::zero::<<Lhs as Mul<Rhs>>::Output>();
-                let kstart = cmp::max(olen, i + 1) - olen;
-                let kend = cmp::min(slen, i + 1);
-                for k in kstart..kend {
-                    p = p + self.data[k].clone() * other.data[i - k].clone();
+            #[inline(always)]
+            fn $method(self, other: Polynomial<T>) -> Polynomial<T> {
+                if self.data.capacity() >= other.data.capacity() {
+                    $imp::$method(self, other.data.iter().cloned().covered())
+                } else {
+                    $imp::$method(self.data.iter().cloned().covered(), other)
                 }
-                p
-            })
-            .collect();
-        Polynomial::new(prod)
+            }
+        }
+    };
+}
+
+macro_rules! forward_iter_ref_val_binop {
+    (impl $imp:ident, $method:ident) => {
+        impl<'a, T> $imp<Polynomial<T>> for &'a Polynomial<T>
+        where
+            T: $imp<T, Output = T> + Zero + Clone,
+        {
+            type Output = Polynomial<T>;
+
+            #[inline(always)]
+            fn $method(self, other: Polynomial<T>) -> Polynomial<T> {
+                $imp::$method(self.data.iter().cloned().covered(), other)
+            }
+        }
+    };
+}
+
+macro_rules! forward_iter_val_ref_binop {
+    (impl $imp:ident, $method:ident) => {
+        impl<'a, T> $imp<&'a Polynomial<T>> for Polynomial<T>
+        where
+            T: $imp<T, Output = T> + Zero + Clone,
+        {
+            type Output = Polynomial<T>;
+
+            #[inline(always)]
+            fn $method(self, other: &'a Polynomial<T>) -> Polynomial<T> {
+                $imp::$method(self, other.data.iter().cloned().covered())
+            }
+        }
+    };
+}
+
+macro_rules! forward_iter_ref_ref_binop {
+    (impl $imp:ident, $method:ident) => {
+        impl<'a, 'b, T> $imp<&'b Polynomial<T>> for &'a Polynomial<T>
+        where
+            T: $imp<T, Output = T> + Zero + Clone,
+        {
+            type Output = Polynomial<T>;
+
+            #[inline(always)]
+            fn $method(self, other: &'b Polynomial<T>) -> Polynomial<T> {
+                if self.data.len() >= other.data.len() {
+                    $imp::$method(self, other.data.iter().cloned().covered())
+                } else {
+                    $imp::$method(self.data.iter().cloned().covered(), other)
+                }
+            }
+        }
+    };
+}
+
+macro_rules! forward_iter_all_binop {
+    (impl $imp:ident, $method:ident) => {
+        forward_ref_iter_binop!(impl $imp, $method);
+        forward_iter_ref_binop!(impl $imp, $method);
+        forward_iter_val_val_binop!(impl $imp, $method);
+        forward_iter_ref_val_binop!(impl $imp, $method);
+        forward_iter_val_ref_binop!(impl $imp, $method);
+        forward_iter_ref_ref_binop!(impl $imp, $method);
+    };
+}
+
+forward_iter_all_binop!(impl Add, add);
+forward_iter_all_binop!(impl Sub, sub);
+forward_iter_all_binop!(impl Mul, mul);
+
+impl<T, I> Add<Covered<I>> for Polynomial<T>
+where
+    T: Zero + Add<T, Output = T> + Clone,
+    I: Iterator<Item = T> + Clone,
+{
+    type Output = Polynomial<T>;
+
+    fn add(mut self, iter: Covered<I>) -> Polynomial<T> {
+        let poly_len = self.data.len();
+        for (j, bj) in iter.0.enumerate() {
+            if j < poly_len {
+                self.data[j] = self.data[j].clone() + bj;
+            } else {
+                self.data.push(bj);
+            }
+        }
+        self.trim();
+        self
+    }
+}
+
+impl<T, I> Add<Polynomial<T>> for Covered<I>
+where
+    T: Zero + Add<T, Output = T> + Clone,
+    I: Iterator<Item = T> + Clone,
+{
+    type Output = Polynomial<T>;
+    #[inline(always)]
+    fn add(self, poly: Polynomial<T>) -> Polynomial<T> {
+        poly + self
+    }
+}
+
+impl<T, I> Sub<Covered<I>> for Polynomial<T>
+where
+    T: Zero + Sub<T, Output = T> + Clone,
+    I: Iterator<Item = T> + Clone,
+{
+    type Output = Polynomial<T>;
+
+    fn sub(mut self, iter: Covered<I>) -> Polynomial<T> {
+        let poly_len = self.data.len();
+        for (j, bj) in iter.0.enumerate() {
+            if j < poly_len {
+                self.data[j] = self.data[j].clone() - bj;
+            } else {
+                self.data.push(T::zero() - bj);
+            }
+        }
+        self.trim();
+        self
+    }
+}
+
+impl<T, I> Sub<Polynomial<T>> for Covered<I>
+where
+    T: Zero + Sub<T, Output = T> + Clone,
+    I: Iterator<Item = T> + Clone,
+{
+    type Output = Polynomial<T>;
+
+    fn sub(self, mut poly: Polynomial<T>) -> Polynomial<T> {
+        let poly_len = poly.data.len();
+        let mut j = 0;
+        for bj in self.0 {
+            if j < poly_len {
+                poly.data[j] = bj - poly.data[j].clone();
+            } else {
+                poly.data.push(bj);
+            }
+            j += 1;
+        }
+        while j < poly_len {
+            poly.data[j] = T::zero() - poly.data[j].clone();
+            j += 1;
+        }
+
+        poly.trim();
+        poly
+    }
+}
+
+impl<T, I> Mul<Covered<I>> for Polynomial<T>
+where
+    T: Zero + Mul<T, Output = T> + Clone,
+    I: Iterator<Item = T> + Clone,
+{
+    type Output = Polynomial<T>;
+
+    fn mul(mut self, mut iter: Covered<I>) -> Polynomial<T> {
+        let mut ai = match self.data.last() {
+            Some(v) => v.clone(),
+            None => return self,
+        };
+        let last_index = self.data.len() - 1;
+        let b0 = match iter.next() {
+            Some(v) => v.clone(),
+            None => {
+                self.data.clear();
+                return self;
+            }
+        };
+
+        self.data[last_index] = ai.clone() * b0.clone();
+        iter.clone().for_each(|bj| self.data.push(ai.clone() * bj));
+        for i in (0..last_index).rev() {
+            ai = self.data[i].clone();
+            self.data[i] = ai.clone() * b0.clone();
+            self.data[(i + 1)..]
+                .iter_mut()
+                .zip(iter.clone())
+                .for_each(|(v, bj)| *v = v.clone() + ai.clone() * bj);
+        }
+        self.trim();
+        self
+    }
+}
+
+impl<T, I> Mul<Polynomial<T>> for Covered<I>
+where
+    T: Zero + Mul<T, Output = T> + Clone,
+    I: Iterator<Item = T> + Clone,
+{
+    type Output = Polynomial<T>;
+    #[inline]
+    fn mul(self, poly: Polynomial<T>) -> Polynomial<T> {
+        poly * self
     }
 }
 
@@ -431,13 +852,9 @@ impl<T: Zero + One + Clone> One for Polynomial<T> {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(not(feature = "std"))]
     extern crate alloc;
-
-    #[cfg(not(feature = "std"))]
-    use alloc::{string::ToString, vec, vec::Vec};
-
-    use super::Polynomial;
+    use super::{Coverable, Polynomial};
+    use alloc::{vec, vec::Vec};
 
     #[test]
     fn new() {
@@ -483,11 +900,13 @@ mod tests {
     #[test]
     fn mul() {
         fn check(a: &[i32], b: &[i32], c: &[i32]) {
-            let a = Polynomial::new(a.to_vec());
-            let b = Polynomial::new(b.to_vec());
-            let c = Polynomial::new(c.to_vec());
-            assert_eq!(c, &a * &b);
-            assert_eq!(c, &b * &a);
+            let a_p = Polynomial::new(a.to_vec());
+            let b_p = Polynomial::new(b.to_vec());
+            let c_p = Polynomial::new(c.to_vec());
+            assert_eq!(c_p, &a_p * &b_p);
+            assert_eq!(c_p, &b_p * &a_p);
+            assert_eq!(c_p, &a_p * b.into_iter().copied().covered());
+            assert_eq!(c_p, a.into_iter().copied().covered() * &b_p);
         }
         check(&[], &[], &[]);
         check(&[0, 0], &[], &[]);
@@ -514,42 +933,88 @@ mod tests {
     }
 
     #[test]
-    fn pretty() {
-        fn check(slice: &[i32], s: &str) {
-            assert_eq!(s.to_string(), Polynomial::new(slice.to_vec()).pretty("x"));
+    fn least_squares() {
+        fn check(max_deg: usize, xyws: impl Iterator<Item = (f64, f64, f64)> + Clone) {
+            const JITTER: f64 = 1e-7;
+            for deg in 0..=max_deg {
+                let mut p = Polynomial::least_squares_fit_weighted(deg, xyws.clone()).unwrap();
+
+                let diff: f64 = xyws
+                    .clone()
+                    .map(|(xi, yi, wi)| wi * (p.eval(xi) - yi).powi(2))
+                    .sum();
+
+                for i in 0..p.data.len() {
+                    for sgn in [-1., 1.] {
+                        let bckp = p.data[i];
+                        p.data[i] += sgn * JITTER;
+                        let jitter_diff: f64 = xyws
+                            .clone()
+                            .map(|(xi, yi, wi)| wi * (p.eval(xi) - yi).powi(2))
+                            .sum();
+
+                        assert!(
+                            diff <= jitter_diff,
+                            "Jitter caused better fit: {:?}>{:?}, deg={}, i={}",
+                            diff,
+                            jitter_diff,
+                            deg,
+                            i
+                        );
+
+                        p.data[i] = bckp
+                    }
+                }
+            }
         }
-        check(&[0], "0");
-        check(&[1], "1");
-        check(&[1, 1], "1+x");
-        check(&[1, 1, 1], "1+x+x^2");
-        check(&[2, 2, 2], "2+2*x+2*x^2");
-        check(&[0, 0, 0, 1], "x^3");
-        check(&[0, 0, 0, -1], "-x^3");
-        check(&[-1, 0, 0, -1], "-1-x^3");
-        check(&[-1, 1, 0, -1], "-1+x-x^3");
-        check(&[-1, 1, -1, -1], "-1+x-x^2-x^3");
+
+        let xs: Vec<f64> = (0..50).map(|x| x as f64 / 50.).collect();
+
+        check(2, xs.iter().map(|&x| (x, x.powi(2), 1.)));
+        check(3, xs.iter().map(|&x| (x, x.powi(4) - x + 3., x)));
+        check(5, xs.iter().map(|&x| (x, x.ln_1p(), 1. - x)));
+
+        assert_eq!(
+            Polynomial::least_squares_fit(1, [(0., 0.), (0., 1.)].into_iter()),
+            None
+        );
     }
 
     #[test]
     fn lagrange() {
         // Evaluate the lagrange polynomial at the x coordinates.
         // The error should be close to zero.
-        fn check(xs: &[f64], ys: &[f64]) {
-            let p = Polynomial::lagrange(xs, ys).unwrap();
-            for (x, y) in xs.iter().zip(ys) {
-                assert!((p.eval(*x) - y).abs() < 1e-9);
-            }
+        fn check(xs: impl Iterator<Item = f64> + Clone, p: Polynomial<f64>) {
+            let p_test = Polynomial::lagrange(xs.map(|xi| (xi, p.eval(xi)))).unwrap();
+            assert!(p_test.data.len() == p.data.len());
+            p_test
+                .data
+                .into_iter()
+                .zip(p.data.into_iter())
+                .for_each(|(c_test, c)| assert!((c_test - c).abs() < 1e-9));
         }
 
         // Squares
-        check(&[1., 2., 3.], &[10., 40., 90.]);
+        check([1., 2., 3.].iter().copied(), Polynomial::new(vec![0., 10.]));
         // Cubes
-        check(&[-1., 0., 1., 2.], &[-1000., 0., 1000., 8000.]);
+        check(
+            [-1., 0., 1., 2.].iter().copied(),
+            Polynomial::new(vec![0., 0., 0., 1.]),
+        );
         // Non linear x.
-        check(&[1., 9., 10., 11.], &[1., 2., 3., 4.]);
+        check(
+            [1., 9., 10., 11.].iter().copied(),
+            Polynomial::new(vec![-1., 2., -3., 4.]),
+        );
+
         // Test double x failure case.
         assert_eq!(
-            Polynomial::lagrange(&[1., 9., 9., 11.], &[1., 2., 3., 4.]),
+            Polynomial::<f64>::lagrange(
+                [1., 9., 9., 11.]
+                    .iter()
+                    .copied()
+                    .zip([1., 2., 3., 4.].iter().copied())
+            ),
             None
         );
     }
@@ -564,7 +1029,7 @@ mod tests {
             for i in 0..=100 {
                 let x = xmin + (i as f64) * ((xmax - xmin) / 100.0);
                 let diff = (f(x) - p.eval(x)).abs();
-                assert!(diff < 0.0001);
+                assert!(diff < 1e-4);
             }
         }
 
@@ -572,11 +1037,9 @@ mod tests {
         use core::f64::consts::PI;
         check(&f64::sin, 7, -PI / 2., PI / 2.);
         check(&f64::cos, 7, 0., PI / 4.);
+        check(&f64::ln, 5, 2., 1.);
 
         // Test n >= 1 condition
         assert!(Polynomial::chebyshev(&f64::exp, 0, 0., 1.).is_none());
-
-        // Test xmax > xmin condition
-        assert!(Polynomial::chebyshev(&f64::ln, 1, 1., 0.).is_none());
     }
 }
