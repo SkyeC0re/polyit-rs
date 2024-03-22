@@ -10,7 +10,7 @@
 
 A no-std library for manipulating polynomials with iterator support and minimal allocation.
 
-[Documentation](https://docs.rs/polynomial/latest/polynomial/)
+[Documentation](https://docs.rs/poly_it/latest/)
 
 ## How to use?
 
