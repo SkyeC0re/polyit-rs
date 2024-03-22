@@ -109,6 +109,7 @@
 #![warn(unused_import_braces)]
 #![warn(unused_qualifications)]
 #![warn(unused_results)]
+#![forbid(unsafe_code)]
 
 extern crate alloc;
 use alloc::{vec, vec::Vec};
