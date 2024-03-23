@@ -854,6 +854,8 @@ impl<T: Zero + One + Clone> One for Polynomial<T> {
 #[cfg(test)]
 mod tests {
     extern crate alloc;
+    use core::ops::{Add, Mul, Sub};
+
     use super::{Coverable, Polynomial};
     use alloc::{vec, vec::Vec};
 
@@ -867,56 +869,71 @@ mod tests {
         check(vec![], vec![0, 0, 0]);
     }
 
-    #[test]
-    fn neg_add_sub() {
-        fn check(a: &[i32], b: &[i32], c: &[i32]) {
-            fn check_eq(a: &Polynomial<i32>, b: &Polynomial<i32>) {
-                assert_eq!(*a, *b);
-                assert_eq!(-a, -b);
-            }
-            fn check_add(sum: &Polynomial<i32>, a: &Polynomial<i32>, b: &Polynomial<i32>) {
-                check_eq(sum, &(a + b));
-                check_eq(sum, &(b + a));
-            }
-            fn check_sub(sum: &Polynomial<i32>, a: &Polynomial<i32>, b: &Polynomial<i32>) {
-                check_eq(a, &(sum - b));
-                check_eq(b, &(sum - a));
-            }
+    macro_rules! test_binop {
+        (impl $imp:ident, $method:ident, $a:expr, $b:expr, $res:expr) => {
+            let a = Polynomial::new(($a).into_iter().collect());
+            let b = Polynomial::new(($b).into_iter().collect());
+            let res = Polynomial::new(($res).into_iter().collect());
+            assert_eq!($imp::$method(a.clone(), b.clone()), res);
+            assert_eq!($imp::$method(a.clone(), &b), res);
+            assert_eq!($imp::$method(&a, b.clone()), res);
+            assert_eq!($imp::$method(&a, &b), res);
+            assert_eq!(
+                $imp::$method(a.clone(), b.coeffs().iter().copied().covered()),
+                res
+            );
+            assert_eq!(
+                $imp::$method(a.coeffs().iter().copied().covered(), b.clone()),
+                res
+            );
+            assert_eq!($imp::$method(&a, b.coeffs().iter().copied().covered()), res);
+            assert_eq!($imp::$method(a.coeffs().iter().copied().covered(), &b), res);
+        };
+    }
 
-            let a = &Polynomial::new(a.to_vec());
-            let b = &Polynomial::new(b.to_vec());
-            let c = &Polynomial::new(c.to_vec());
-            check_add(c, a, b);
-            check_add(&(-c), &(-a), &(-b));
-            check_sub(c, a, b);
-            check_sub(&(-c), &(-a), &(-b));
-        }
-        check(&[], &[], &[]);
-        check(&[], &[1], &[1]);
-        check(&[1], &[1], &[2]);
-        check(&[1, 0, 1], &[1], &[2, 0, 1]);
-        check(&[1, 0, -1], &[-1, 0, 1], &[]);
+    #[test]
+    fn neg() {
+        let p = Polynomial::new([1, 2, 3].to_vec());
+        let p_neg = Polynomial::new([-1, -2, -3].to_vec());
+        assert_eq!(-(&p), p_neg);
+        assert_eq!(-p.clone(), p_neg);
+        assert_eq!(-(-p.clone()), p);
+    }
+
+    #[test]
+    fn add() {
+        let empty: [i32; 0] = [];
+        test_binop!(impl Add, add, empty, empty, empty);
+        test_binop!(impl Add, add, empty, [1], [1]);
+        test_binop!(impl Add, add, [1], empty, [1]);
+        test_binop!(impl Add, add, [1, 2, 3], [-1, -2, -3], empty);
+        test_binop!(impl Add, add, [0, 2, 4], [1, 3, 5], [1, 5, 9]);
+        test_binop!(impl Add, add, [1, 2, 3], [3, 2, 1], [4, 4, 4]);
+    }
+
+    #[test]
+    fn sub() {
+        let empty: [i32; 0] = [];
+        test_binop!(impl Sub, sub, empty, empty, empty);
+        test_binop!(impl Sub, sub, empty, [1], [-1]);
+        test_binop!(impl Sub, sub, [1], empty, [1]);
+        test_binop!(impl Sub, sub, [1, 2, 3], [1, 2, 3], empty);
+        test_binop!(impl Sub, sub, [0, 2, 4], [1, 3, 5], [-1, -1, -1]);
+        test_binop!(impl Sub, sub, [1, 2, 3], [3, 2, 1], [-2, 0, 2]);
     }
 
     #[test]
     fn mul() {
-        fn check(a: &[i32], b: &[i32], c: &[i32]) {
-            let a_p = Polynomial::new(a.to_vec());
-            let b_p = Polynomial::new(b.to_vec());
-            let c_p = Polynomial::new(c.to_vec());
-            assert_eq!(c_p, &a_p * &b_p);
-            assert_eq!(c_p, &b_p * &a_p);
-            assert_eq!(c_p, &a_p * b.into_iter().copied().covered());
-            assert_eq!(c_p, a.into_iter().copied().covered() * &b_p);
-        }
-        check(&[], &[], &[]);
-        check(&[0, 0], &[], &[]);
-        check(&[0, 0], &[1], &[]);
-        check(&[1, 0], &[1], &[1]);
-        check(&[1, 0, 1], &[1], &[1, 0, 1]);
-        check(&[1, 1], &[1, 1], &[1, 2, 1]);
-        check(&[1, 1], &[1, 0, 1], &[1, 1, 1, 1]);
-        check(&[0, 0, 1], &[0, 0, 1], &[0, 0, 0, 0, 1]);
+        let empty: [i32; 0] = [];
+        test_binop!(impl Mul, mul, empty, empty, empty);
+        test_binop!(impl Mul, mul, empty, [1], empty);
+        test_binop!(impl Mul, mul, [1], empty, empty);
+        test_binop!(impl Mul, mul, [0], [1, 2], empty);
+        test_binop!(impl Mul, mul, [1, 2], [0], empty);
+        test_binop!(impl Mul, mul, [1], [1], [1]);
+        test_binop!(impl Mul, mul, [1, -3], [1, -3], [1, -6, 9]);
+        test_binop!(impl Mul, mul, [1, 1], [1, 0, 1], [1, 1, 1, 1]);
+        test_binop!(impl Mul, mul, [0, 0, 1], [0, -1], [0, 0, 0, -1]);
     }
 
     #[test]
@@ -1021,7 +1038,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(any(feature = "std", feature = "libm"))]
     fn chebyshev() {
         // Construct a Chebyshev approximation for a function
         // and evaulate it at 100 points.
