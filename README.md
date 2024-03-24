@@ -8,7 +8,7 @@
 [![Rust CI](https://github.com/SkyeC0re/polyit-rs/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/SkyeC0re/polyit-rs/actions/workflows/rust-ci.yml)
 [![codecov](https://codecov.io/gh/SkyeC0re/polyit-rs/branch/master/graph/badge.svg?token=UIj6XoEUBm)](https://codecov.io/gh/SkyeC0re/polyit-rs)
 
-A no-std library for manipulating polynomials with iterator support and minimal allocation.
+A no-std library for manipulating polynomials with slice support and minimal allocation.
 
 [Documentation](https://docs.rs/poly_it/latest/)
 
@@ -18,7 +18,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-poly_it = "0.1.3"
+poly_it = "0.2.0"
 ```
 
 ## no_std environments

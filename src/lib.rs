@@ -1,18 +1,18 @@
 //! # poly_it
-//! A no-std library for manipulating polynomials with iterator support and minimal allocation.
+//! A no-std library for manipulating polynomials with slice support and minimal allocation.
 //!
 //! At the end of the day the classical representation method for the polynomial is
-//! it coefficients and this library leverages this by means of clone-able iterators.  
+//! its coefficients and this library leverages this by means of slices.  
 //! Take this example case:
 //! ```
 //! extern crate poly_it;
-//! use poly_it::{Polynomial, Coverable};
+//! use poly_it::Polynomial;
 //!
 //! pub fn main() {
 //!     let p1 = Polynomial::new(vec![1, 2, 3]);
 //!     let p2 = Polynomial::new(vec![3, 2, 1]);
-//!     let arr_iter = [1, 2];
-//!     let vec_iter = vec![1, 2, 3];
+//!     let arr = [1, 2];
+//!     let vec = vec![1, 2, 3];
 //!
 //!     assert_eq!(
 //!         format!("{}", p2 - &p1),
@@ -20,74 +20,24 @@
 //!     );
 //!
 //!     assert_eq!(
-//!         format!("{}", p1.clone() + arr_iter.into_iter().covered()),
+//!         format!("{}", p1.clone() + arr.as_slice()),
 //!         "2 + 4x + 3x^2"
 //!     );
 //!
 //!     assert_eq!(
-//!         format!("{}", p1 * vec_iter.iter().copied().covered()),
+//!         format!("{}", p1 * vec.as_slice()),
 //!         "1 + 4x + 10x^2 + 12x^3 + 9x^4"
 //!     );
 //! }
 //! ```
 //!
 //! This example illustrates several things:
-//! 1. The use `into_iter()` and `iter().copied()` type iterators
-//! 2. The covering mechanism used by this crate
-//! 3. Using operations with owned or referenced polynomials.
-//! 4. That `+ -` is possibly heretical.
+//! 1. Binary operations with slices.
+//! 2. Using operations with owned or referenced polynomials.
+//! 3. That `+ -` is possibly heretical.
 //!
-//! As to the fourth point, this has to do with future proofing in cases where the underlying numerical type
-//! might not have ordering, but for the first three, see below for a quick summary as to the how and the why.
-//!
-//! ## Iterator Support
-//!
-//! ### `into_iter()` vs `iter().cloned()`/`iter().copied()`:
-//!
-//! Many iterable types gives the user the option between using `into_iter()` to produce elements of
-//! type some type `T` or `iter()` to produce `&T`. The issue with the former is that for iterable types which are expensive
-//! to clone, this hinders performance as each time the iterator is cloned, the underlying data is cloned with it (as is the case
-//! with [Vec](struct@Vec)). For these types the user is urged to use the `iter().cloned()`/`iter().copied()` pattern instead
-//! such that the underlying iterable type gets reused on a clone of the iterator.
-//!
-//! **Caveats**
-//!
-//! This crate assumes the following for any iterator passed to it during a function call:
-//! 1. The iterator is fixed for the duration of the function. That is to say that it will always produce the
-//!    same list of elements regardless of how long the function waits before iterating over it.
-//! 2. Any clones of the iterator will produce the same elements as the iterator.
-//!
-//! ### Covered iterators
-//!
-//! Rust allows the following implementation of a trait:
-//! ```text
-//! impl ForeignTrait<LocalType> for ForeignType
-//! ```
-//! but not:
-//! ```text
-//! impl<T: SomeTrait> ForeignTrait<LocalType> for T
-//! ```
-//! (see [this issue](https://github.com/rust-lang/rust/issues/63599) for more details). This means that it
-//! is impossible to implement binary operations with iterators on the left hand side. One such example would be:
-//! ```text
-//! impl<T: Add<T, Output=T>, I: Iterator<Item=T>> Add<Polynomial<T>> for I
-//! ```
-//! even though we could manually implement (in a similar fashion as
-//! [nalgedra  did for the primitive numeric types](https://docs.rs/nalgebra/latest/src/nalgebra/base/ops.rs.html#548)):
-//! ```text
-//! impl<T: Add<T, Output=T>> Add<Polynomial<T>> for SomeConcreteIterator
-//! ```
-//! for all iterators and nested and chained iterator combinations...
-//!
-//! We will not be doing this.
-//!
-//! Instead we propose a simple covering mechanism, such that by wrapping the iterators in a local type (see [Covered](struct@Covered))
-//! we are able to implement:
-//! ```text
-//! impl<T: Add<T, Output=T>, I: Iterator<Item=T>> Add<Polynomial<T>> for LocalWrapperType<I>
-//! ```
-//!
-//! Note: Although not required we also enforce this when the Polynomial is the LHS for consistency.
+//! As to the third point, this has to do with future proofing in cases where the underlying numerical type
+//! might not have ordering, but for the second point, see below for a quick summary as to the how and the why.
 //!
 //! ## Minimal Allocation
 //!
@@ -114,55 +64,11 @@
 extern crate alloc;
 use alloc::{vec, vec::Vec};
 use core::fmt::Display;
-use core::ops::{Add, Deref, DerefMut, Div, Mul, Neg, Sub};
+use core::ops::{Add, Div, Mul, Neg, Sub};
 use core::{fmt, mem};
 use num_traits::{Float, FloatConst, FromPrimitive, One, Zero};
 
 pub use num_traits;
-
-/// A struct for covering generic objects under this crate.
-/// Currently it is not possible to implement the following in Rust:  
-/// `impl<T> ForeignTrait<LocalType> for T`  
-/// but it is possible to implement:  
-/// `impl<T> ForeignTrait<LocalType> for LocalType<T>`  
-#[repr(transparent)]
-pub struct Covered<T>(pub T);
-
-impl<T> Deref for Covered<T> {
-    type Target = T;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T> DerefMut for Covered<T> {
-    #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-/// A convenience trait for the [Covered](struct@Covered) which
-/// allows any sized type to be covered under this crate by calling [covered](fn@Coverable::covered)
-/// on it.
-pub trait Coverable {
-    /// Covers an object under this crate.
-    fn covered(self) -> Covered<Self>
-    where
-        Self: Sized;
-}
-
-impl<T: Sized> Coverable for T {
-    #[inline(always)]
-    fn covered(self) -> Covered<Self>
-    where
-        Self: Sized,
-    {
-        Covered(self)
-    }
-}
 
 /// A polynomial.
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -469,7 +375,7 @@ where
             let mut denom = T::one();
             for (j, (x2, _)) in samples.clone().enumerate() {
                 if i != j {
-                    li = li * [-x2.clone(), T::one()].into_iter().covered();
+                    li = li * [-x2.clone(), T::one()].as_slice();
                     let diff = x.clone() - x2.clone();
                     if diff.is_zero() {
                         return None;
@@ -478,7 +384,7 @@ where
                 }
             }
             let scalar = y.clone() / denom;
-            li = li * [scalar].into_iter().covered();
+            li = li * [scalar].as_slice();
             res = res + &li;
         }
         res.trim();
@@ -582,15 +488,14 @@ where
 
 macro_rules! forward_ref_iter_binop {
     (impl $imp:ident, $method:ident) => {
-        impl<'a, T, I> $imp<Covered<I>> for &'a Polynomial<T>
+        impl<'a, T> $imp<&'a [T]> for &'a Polynomial<T>
         where
             T: 'a + $imp<T, Output = T> + Zero + Clone,
-            I: Iterator<Item = T> + Clone,
         {
             type Output = Polynomial<T>;
 
             #[inline(always)]
-            fn $method(self, other: Covered<I>) -> Self::Output {
+            fn $method(self, other: &[T]) -> Self::Output {
                 $imp::$method(self.clone(), other)
             }
         }
@@ -599,10 +504,9 @@ macro_rules! forward_ref_iter_binop {
 
 macro_rules! forward_iter_ref_binop {
     (impl $imp:ident, $method:ident) => {
-        impl<'a, T, I> $imp<&'a Polynomial<T>> for Covered<I>
+        impl<'a, T> $imp<&'a Polynomial<T>> for &'a [T]
         where
-            T: 'a + $imp<T, Output = T> + Zero + Clone,
-            I: Iterator<Item = T> + Clone,
+            T: $imp<T, Output = T> + Zero + Clone,
         {
             type Output = Polynomial<T>;
 
@@ -625,9 +529,9 @@ macro_rules! forward_iter_val_val_binop {
             #[inline(always)]
             fn $method(self, other: Polynomial<T>) -> Self::Output {
                 if self.data.capacity() >= other.data.capacity() {
-                    $imp::$method(self, other.data.iter().cloned().covered())
+                    $imp::$method(self, other.data.as_slice())
                 } else {
-                    $imp::$method(self.data.iter().cloned().covered(), other)
+                    $imp::$method(self.data.as_slice(), other)
                 }
             }
         }
@@ -644,7 +548,7 @@ macro_rules! forward_iter_ref_val_binop {
 
             #[inline(always)]
             fn $method(self, other: Polynomial<T>) -> Self::Output {
-                $imp::$method(self.data.iter().cloned().covered(), other)
+                $imp::$method(self.data.as_slice(), other)
             }
         }
     };
@@ -660,7 +564,7 @@ macro_rules! forward_iter_val_ref_binop {
 
             #[inline(always)]
             fn $method(self, other: &'a Polynomial<T>) -> Self::Output {
-                $imp::$method(self, other.data.iter().cloned().covered())
+                $imp::$method(self, other.data.as_slice())
             }
         }
     };
@@ -677,9 +581,9 @@ macro_rules! forward_iter_ref_ref_binop {
             #[inline(always)]
             fn $method(self, other: &'b Polynomial<T>) -> Self::Output {
                 if self.data.len() >= other.data.len() {
-                    $imp::$method(self, other.data.iter().cloned().covered())
+                    $imp::$method(self, other.data.as_slice())
                 } else {
-                    $imp::$method(self.data.iter().cloned().covered(), other)
+                    $imp::$method(self.data.as_slice(), other)
                 }
             }
         }
@@ -701,20 +605,20 @@ forward_iter_all_binop!(impl Add, add);
 forward_iter_all_binop!(impl Sub, sub);
 forward_iter_all_binop!(impl Mul, mul);
 
-impl<T, I> Add<Covered<I>> for Polynomial<T>
+impl<'a, T> Add<&'a [T]> for Polynomial<T>
 where
     T: Zero + Add<T, Output = T> + Clone,
-    I: Iterator<Item = T> + Clone,
 {
     type Output = Polynomial<T>;
 
-    fn add(mut self, iter: Covered<I>) -> Self::Output {
-        let poly_len = self.data.len();
-        for (j, bj) in iter.0.enumerate() {
-            if j < poly_len {
-                self.data[j] = self.data[j].clone() + bj;
-            } else {
-                self.data.push(bj);
+    fn add(mut self, other: &'a [T]) -> Self::Output {
+        let p_data = &mut self.data;
+        for (pi, si) in p_data.iter_mut().zip(other.into_iter().cloned()) {
+            *pi = pi.clone() + si;
+        }
+        if other.len() > p_data.len() {
+            for si in other[p_data.len()..].iter().cloned() {
+                p_data.push(si);
             }
         }
         self.trim();
@@ -722,32 +626,31 @@ where
     }
 }
 
-impl<T, I> Add<Polynomial<T>> for Covered<I>
+impl<'a, T> Add<Polynomial<T>> for &'a [T]
 where
     T: Zero + Add<T, Output = T> + Clone,
-    I: Iterator<Item = T> + Clone,
 {
     type Output = Polynomial<T>;
     #[inline(always)]
-    fn add(self, poly: Polynomial<T>) -> Self::Output {
-        poly + self
+    fn add(self, other: Polynomial<T>) -> Self::Output {
+        other + self
     }
 }
 
-impl<T, I> Sub<Covered<I>> for Polynomial<T>
+impl<'a, T> Sub<&'a [T]> for Polynomial<T>
 where
     T: Zero + Sub<T, Output = T> + Clone,
-    I: Iterator<Item = T> + Clone,
 {
     type Output = Polynomial<T>;
 
-    fn sub(mut self, iter: Covered<I>) -> Self::Output {
-        let poly_len = self.data.len();
-        for (j, bj) in iter.0.enumerate() {
-            if j < poly_len {
-                self.data[j] = self.data[j].clone() - bj;
-            } else {
-                self.data.push(T::zero() - bj);
+    fn sub(mut self, other: &'a [T]) -> Self::Output {
+        let p_data = &mut self.data;
+        for (pi, si) in p_data.iter_mut().zip(other.into_iter().cloned()) {
+            *pi = pi.clone() - si;
+        }
+        if other.len() > p_data.len() {
+            for si in other[p_data.len()..].iter().cloned() {
+                p_data.push(T::zero() - si);
             }
         }
         self.trim();
@@ -755,79 +658,78 @@ where
     }
 }
 
-impl<T, I> Sub<Polynomial<T>> for Covered<I>
+impl<'a, T> Sub<Polynomial<T>> for &'a [T]
 where
     T: Zero + Sub<T, Output = T> + Clone,
-    I: Iterator<Item = T> + Clone,
 {
     type Output = Polynomial<T>;
 
-    fn sub(self, mut poly: Polynomial<T>) -> Self::Output {
-        let poly_len = poly.data.len();
-        let mut j = 0;
-        for bj in self.0 {
-            if j < poly_len {
-                poly.data[j] = bj - poly.data[j].clone();
-            } else {
-                poly.data.push(bj);
+    fn sub(self, mut other: Polynomial<T>) -> Self::Output {
+        let p_data = &mut other.data;
+        for (pi, si) in p_data.iter_mut().zip(self.into_iter().cloned()) {
+            *pi = si - pi.clone();
+        }
+        if self.len() > p_data.len() {
+            for si in self[p_data.len()..].iter().cloned() {
+                p_data.push(si);
             }
-            j += 1;
+        } else {
+            for pi in &mut p_data[self.len()..] {
+                *pi = T::zero() - pi.clone();
+            }
         }
-        while j < poly_len {
-            poly.data[j] = T::zero() - poly.data[j].clone();
-            j += 1;
-        }
-
-        poly.trim();
-        poly
+        other.trim();
+        other
     }
 }
 
-impl<T, I> Mul<Covered<I>> for Polynomial<T>
+impl<'a, T> Mul<&'a [T]> for Polynomial<T>
 where
     T: Zero + Mul<T, Output = T> + Clone,
-    I: Iterator<Item = T> + Clone,
 {
     type Output = Polynomial<T>;
 
-    fn mul(mut self, mut iter: Covered<I>) -> Self::Output {
+    fn mul(mut self, other: &'a [T]) -> Self::Output {
         let mut ai = match self.data.last() {
             Some(v) => v.clone(),
             None => return self,
         };
         let last_index = self.data.len() - 1;
-        let b0 = match iter.next() {
+        let b0 = match other.get(0) {
             Some(v) => v.clone(),
             None => {
                 self.data.clear();
                 return self;
             }
         };
+        let other = &other[1..];
 
         self.data[last_index] = ai.clone() * b0.clone();
-        iter.clone().for_each(|bj| self.data.push(ai.clone() * bj));
+        other
+            .into_iter()
+            .cloned()
+            .for_each(|bj| self.data.push(ai.clone() * bj));
         for i in (0..last_index).rev() {
             ai = self.data[i].clone();
             self.data[i] = ai.clone() * b0.clone();
             self.data[(i + 1)..]
                 .iter_mut()
-                .zip(iter.clone())
-                .for_each(|(v, bj)| *v = v.clone() + ai.clone() * bj);
+                .zip(other.into_iter().cloned())
+                .for_each(|(v, bj)| *v = v.clone() + ai.clone() * bj.clone());
         }
         self.trim();
         self
     }
 }
 
-impl<T, I> Mul<Polynomial<T>> for Covered<I>
+impl<'a, T> Mul<Polynomial<T>> for &'a [T]
 where
     T: Zero + Mul<T, Output = T> + Clone,
-    I: Iterator<Item = T> + Clone,
 {
     type Output = Polynomial<T>;
     #[inline]
-    fn mul(self, poly: Polynomial<T>) -> Self::Output {
-        poly * self
+    fn mul(self, other: Polynomial<T>) -> Self::Output {
+        other * self
     }
 }
 
@@ -856,7 +758,7 @@ mod tests {
     extern crate alloc;
     use core::ops::{Add, Mul, Sub};
 
-    use super::{Coverable, Polynomial};
+    use super::Polynomial;
     use alloc::{vec, vec::Vec};
 
     #[test]
@@ -878,16 +780,10 @@ mod tests {
             assert_eq!($imp::$method(a.clone(), &b), res);
             assert_eq!($imp::$method(&a, b.clone()), res);
             assert_eq!($imp::$method(&a, &b), res);
-            assert_eq!(
-                $imp::$method(a.clone(), b.coeffs().iter().copied().covered()),
-                res
-            );
-            assert_eq!(
-                $imp::$method(a.coeffs().iter().copied().covered(), b.clone()),
-                res
-            );
-            assert_eq!($imp::$method(&a, b.coeffs().iter().copied().covered()), res);
-            assert_eq!($imp::$method(a.coeffs().iter().copied().covered(), &b), res);
+            assert_eq!($imp::$method(a.clone(), b.coeffs()), res);
+            assert_eq!($imp::$method(a.coeffs(), b.clone()), res);
+            assert_eq!($imp::$method(&a, b.coeffs()), res);
+            assert_eq!($imp::$method(a.coeffs(), &b), res);
         };
     }
 
