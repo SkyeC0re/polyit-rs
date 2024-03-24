@@ -64,20 +64,105 @@
 extern crate alloc;
 use alloc::{vec, vec::Vec};
 use core::fmt::Display;
+use core::marker::PhantomData;
 use core::ops::{Add, Div, Mul, Neg, Sub};
 use core::{fmt, mem};
 use num_traits::{Float, FloatConst, FromPrimitive, One, Zero};
 
 pub use num_traits;
 
+/// Represents a slice like storage type.
+pub trait Storage<T>: Clone {
+    /// Create a new storage instance.
+    fn new() -> Self;
+
+    /// Create a new storage instance with at least `capacity` capacity.
+    /// Is allowed to panic if the storage type cannot support the requested capacity.
+    fn with_capacity(capacity: usize) -> Self;
+
+    /// Clears all data in the storage.
+    fn clear(&mut self);
+
+    /// Push an element to storage.
+    fn push(&mut self, value: T);
+
+    /// Pop the last element from storage.
+    fn pop(&mut self) -> Option<T>;
+
+    /// Return an immutable refrence to the data.
+    fn as_slice(&self) -> &[T];
+
+    /// Return a mutable reference to the data.
+    fn as_mut_slice(&mut self) -> &mut [T];
+
+    /// Return the length of the data. Should always concide with the
+    /// the slice's length.
+    #[inline]
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    /// Return the capacity of the storage type.
+    fn capacity(&self) -> usize;
+}
+
+impl<T> Storage<T> for Vec<T>
+where
+    T: Clone,
+{
+    #[inline]
+    fn new() -> Self {
+        Self::new()
+    }
+
+    #[inline]
+    fn with_capacity(capacity: usize) -> Self {
+        Self::with_capacity(capacity)
+    }
+
+    #[inline]
+    fn clear(&mut self) {
+        self.clear();
+    }
+
+    #[inline]
+    fn push(&mut self, value: T) {
+        self.push(value);
+    }
+
+    #[inline]
+    fn pop(&mut self) -> Option<T> {
+        self.pop()
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.capacity()
+    }
+
+    fn as_slice(&self) -> &[T] {
+        self.as_slice()
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [T] {
+        self.as_mut_slice()
+    }
+}
+
 /// A polynomial.
 #[derive(Eq, PartialEq, Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Polynomial<T> {
-    data: Vec<T>,
+pub struct Polynomial<T, S: Storage<T> = Vec<T>> {
+    data: S,
+    _type: PhantomData<T>,
 }
 
-impl<T: Zero> Polynomial<T> {
+impl<T: Zero, S: Storage<T>> Polynomial<T, S> {
     /// Creates a new `Polynomial` from a `Vec` of coefficients. Automatically
     /// trims all trailing zeroes from the data.
     ///
@@ -89,8 +174,11 @@ impl<T: Zero> Polynomial<T> {
     /// assert_eq!("1.00 + 2.00x + 3.00x^2", format!("{:.2}", poly));
     /// ```
     #[inline]
-    pub fn new(data: Vec<T>) -> Self {
-        let mut p = Self { data };
+    pub fn new(data: S) -> Self {
+        let mut p = Self {
+            data,
+            _type: PhantomData,
+        };
         p.trim();
         p
     }
@@ -106,7 +194,7 @@ impl<T: Zero> Polynomial<T> {
     /// ```
     #[inline]
     pub fn trim(&mut self) {
-        while let Some(true) = self.data.last().map(T::is_zero) {
+        while let Some(true) = self.data.as_slice().last().map(T::is_zero) {
             let _ = self.data.pop();
         }
     }
@@ -114,31 +202,34 @@ impl<T: Zero> Polynomial<T> {
     /// Get an immutable reference to the polynomial's coefficients.
     #[inline]
     pub fn coeffs(&self) -> &[T] {
-        &self.data
+        self.data.as_slice()
     }
 
     /// Get a mutable reference to the polynomial's coefficients.
     #[inline]
     pub fn coeffs_mut(&mut self) -> &mut [T] {
-        &mut self.data
+        self.data.as_mut_slice()
     }
 }
 
-impl<T> Into<Vec<T>> for Polynomial<T> {
-    #[inline]
-    fn into(self) -> Vec<T> {
-        self.data
-    }
-}
+// impl<T, S> Into<S> for Polynomial<T, S>
+// where
+//     S: Storage<T>,
+// {
+//     #[inline]
+//     fn into(self) -> S {
+//         self.data
+//     }
+// }
 
-impl<T: Display> Display for Polynomial<T>
+impl<T, S> Display for Polynomial<T, S>
 where
-    T: Zero,
+    T: Display + Zero,
+    S: Storage<T>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut previous_nonzero_term = false;
-        for i in 0..self.data.len() {
-            let ci = &self.data[i];
+        for (i, ci) in self.data.as_slice().into_iter().enumerate() {
             if ci.is_zero() {
                 continue;
             }
@@ -164,7 +255,7 @@ where
     }
 }
 
-impl<T> Polynomial<T>
+impl<T, S> Polynomial<T, S>
 where
     T: Zero
         + One
@@ -174,6 +265,7 @@ where
         + Mul<T, Output = T>
         + Div<T, Output = T>
         + Clone,
+    S: Storage<T> + Clone,
 {
     /// Generates the polynomial $P(x)$ that fits a number of points `N` in a least squares sense which minimizes:
     /// $$\sum_{i=1}^N\left[P(x_i) - y_i\right]^2$$
@@ -192,7 +284,7 @@ where
     ///     let xf = x as f64;
     ///     (xf, 1. + 2. * xf + 3. * xf * xf + xf.sin())
     /// }).collect();
-    /// let poly = Polynomial::least_squares_fit(
+    /// let poly = Polynomial::<f64>::least_squares_fit(
     ///     2,
     ///     xys.iter().copied()
     ///  ).unwrap();
@@ -222,7 +314,7 @@ where
     ///     let xf = x as f64;
     ///     return (xf, 1. + 2. * xf + 3. * xf * xf + xf.sin(), 1.0 - xf.sin().abs())
     /// }).collect();
-    /// let poly = Polynomial::least_squares_fit_weighted(
+    /// let poly = Polynomial::<f64>::least_squares_fit_weighted(
     ///     2,
     ///     xyws.iter().copied()
     ///     ).unwrap();
@@ -250,30 +342,23 @@ where
         b_0 = b_0 / gamma_0.clone();
         d_0 = d_0 / gamma_0.clone();
 
-        let mut p_data = Vec::with_capacity(deg + 1);
-        p_data.push(d_0);
+        let mut p_data = S::with_capacity(deg + 1);
 
         if deg == 0 {
+            p_data.push(d_0);
             return Some(Polynomial::new(p_data));
         }
 
-        let mut p_km1_offset = data_len;
-        let mut p_k_offset = data_len + (deg + 1);
-        // Stores x_i^{k + 1} data, P_k data and P_{k-1} data.
-        let mut computation_data = Vec::with_capacity(data_len + ((deg + 1) << 1));
-        computation_data.extend(samples.clone().map(|(xi, _, _)| xi));
-        computation_data.extend((0usize..(deg + 1) << 1).map(|_| T::zero()));
-
-        computation_data[p_k_offset] = T::one();
-
-        let eval_slice = |slice: &[T], x: T| -> T {
-            slice
-                .into_iter()
-                .rev()
-                .cloned()
-                .reduce(|acc, c_i| x.clone() * acc + c_i)
-                .unwrap_or(T::zero())
-        };
+        for _ in 0..(deg + 1) {
+            p_data.push(T::zero());
+        }
+        let mut p_km1 = p_data.clone();
+        let mut p_km1 = p_km1.as_mut_slice();
+        let mut p_k = p_data.clone();
+        let mut p_k = p_k.as_mut_slice();
+        let p_data_slice = p_data.as_mut_slice();
+        p_data_slice[0] = d_0;
+        p_k[0] = T::one();
 
         let mut gamma_k = gamma_0;
         let mut b_k = b_0;
@@ -281,39 +366,28 @@ where
         let mut kp1 = 1;
 
         loop {
-            p_data.push(Zero::zero());
-
             // Overwrite p_{k-1} with p_{k+1}
-            for i in 0..(kp1 - 1) {
-                computation_data[p_km1_offset + i] =
-                    minus_c_k.clone() * computation_data[p_km1_offset + i].clone();
+            for (p_km1i, p_ki) in p_km1[0..kp1].iter_mut().zip(p_k[0..kp1].iter().cloned()) {
+                *p_km1i = minus_c_k.clone() * p_km1i.clone() - b_k.clone() * p_ki;
             }
-            for i in 0..kp1 {
-                computation_data[p_km1_offset + i] = computation_data[p_km1_offset + i].clone()
-                    - b_k.clone() * computation_data[p_k_offset + i].clone();
-                computation_data[p_km1_offset + i + 1] = computation_data[p_km1_offset + i + 1]
-                    .clone()
-                    + computation_data[p_k_offset + i].clone();
+            for (p_km1i, p_kim1) in p_km1[1..(kp1 + 1)]
+                .iter_mut()
+                .zip(p_k[0..kp1].iter().cloned())
+            {
+                *p_km1i = p_km1i.clone() + p_kim1;
             }
 
-            let (mut d_kp1, gamma_kp1, mut b_kp1) = samples.clone().enumerate().fold(
+            let (mut d_kp1, gamma_kp1, mut b_kp1) = samples.clone().fold(
                 (T::zero(), T::zero(), T::zero()),
-                |mut acc, (i, (xi, yi, wi))| {
-                    let weighted_eval = wi
-                        * eval_slice(
-                            &computation_data[p_km1_offset..(p_km1_offset + kp1 + 1)],
-                            xi.clone(),
-                        );
+                |mut acc, (xi, yi, wi)| {
+                    let px = eval_slice_horner(&p_km1[0..(kp1 + 1)], xi.clone());
+                    let wipx = wi * px.clone();
+                    acc.0 = acc.0 + yi * wipx.clone();
 
-                    acc.0 = acc.0 + yi * weighted_eval.clone();
-                    let mut xi_powk = computation_data[i].clone();
-                    acc.1 = acc.1 + xi_powk.clone() * weighted_eval.clone();
+                    let wipxpx = wipx * px;
+                    acc.1 = acc.1 + wipxpx.clone();
+                    acc.2 = acc.2 + xi * wipxpx;
 
-                    // Update x_i^k to x_i^{k+1}
-                    xi_powk = xi_powk * xi;
-                    computation_data[i] = xi_powk.clone();
-
-                    acc.2 = acc.2 + xi_powk * weighted_eval;
                     acc
                 },
             );
@@ -324,9 +398,11 @@ where
 
             d_kp1 = d_kp1 / gamma_kp1.clone();
 
-            for i in 0..(kp1 + 1) {
-                p_data[i] =
-                    p_data[i].clone() + d_kp1.clone() * computation_data[p_km1_offset + i].clone();
+            for (pi, p_km1i) in p_data_slice
+                .iter_mut()
+                .zip(p_km1[0..(kp1 + 1)].iter().cloned())
+            {
+                *pi = pi.clone() + d_kp1.clone() * p_km1i;
             }
 
             if kp1 == deg {
@@ -334,7 +410,7 @@ where
             }
 
             // Delay the remaining work left for b_{k+1} until it is certain to be needed.
-            b_kp1 = b_kp1 / gamma_kp1.clone() + computation_data[p_km1_offset + kp1 - 1].clone();
+            b_kp1 = b_kp1 / gamma_kp1.clone();
 
             kp1 += 1;
             b_k = b_kp1;
@@ -342,7 +418,7 @@ where
             gamma_k = gamma_kp1;
 
             // Reorient the offsets
-            mem::swap(&mut p_k_offset, &mut p_km1_offset);
+            mem::swap(&mut p_k, &mut p_km1);
         }
         let mut p = Polynomial::new(p_data);
         p.trim();
@@ -367,8 +443,8 @@ where
     /// assert_eq!("10.0x^2", format!("{:.1}",poly));
     /// ```
     pub fn lagrange(samples: impl Iterator<Item = (T, T)> + Clone) -> Option<Self> {
-        let mut res = Polynomial::new(vec![Zero::zero()]);
-        let mut li = Polynomial::new(Vec::new());
+        let mut res = Polynomial::new(S::new());
+        let mut li = Polynomial::new(S::new());
         for (i, (x, y)) in samples.clone().enumerate() {
             li.data.clear();
             li.data.push(T::one());
@@ -392,9 +468,10 @@ where
     }
 }
 
-impl<T> Polynomial<T>
+impl<T, S> Polynomial<T, S>
 where
     T: Zero + One + FloatConst + Float + FromPrimitive,
+    S: Storage<T>,
 {
     /// [Chebyshev approximation] fits a function $f(x)$ over to a polynomial by taking $n-1$
     /// samples of $f$ on some interval $[a, b]$.
@@ -411,7 +488,7 @@ where
     /// ```
     /// use poly_it::Polynomial;
     /// use std::f64::consts::PI;
-    /// let p = Polynomial::chebyshev(&f64::sin, 7, PI/4., -PI/4.).unwrap();
+    /// let p = Polynomial::<f64>::chebyshev(&f64::sin, 7, PI/4., -PI/4.).unwrap();
     /// assert!((p.eval(0.) - (0.0_f64).sin()).abs() < 0.0001);
     /// assert!((p.eval(0.1) - (0.1_f64).sin()).abs() < 0.0001);
     /// assert!((p.eval(-0.1) - (-0.1_f64).sin()).abs() < 0.0001);
@@ -439,7 +516,24 @@ where
     }
 }
 
-impl<T: Zero + Mul<Output = T> + Clone> Polynomial<T> {
+#[inline]
+fn eval_slice_horner<T>(slice: &[T], x: T) -> T
+where
+    T: Zero + Mul<Output = T> + Clone,
+{
+    let mut result = T::zero();
+    for ci in slice.into_iter().rev().cloned() {
+        result = result * x.clone() + ci.clone();
+    }
+
+    result
+}
+
+impl<T, S> Polynomial<T, S>
+where
+    T: Zero + Mul<Output = T> + Clone,
+    S: Storage<T>,
+{
     /// Evaluates the polynomial at a point.
     ///
     /// # Examples
@@ -451,13 +545,9 @@ impl<T: Zero + Mul<Output = T> + Clone> Polynomial<T> {
     /// assert_eq!(6, poly.eval(1));
     /// assert_eq!(17, poly.eval(2));
     /// ```
-    #[inline]
+    #[inline(always)]
     pub fn eval(&self, x: T) -> T {
-        let mut result: T = Zero::zero();
-        for n in self.data.iter().rev() {
-            result = result * x.clone() + n.clone();
-        }
-        result
+        eval_slice_horner(self.data.as_slice(), x)
     }
 }
 
@@ -488,11 +578,12 @@ where
 
 macro_rules! forward_ref_iter_binop {
     (impl $imp:ident, $method:ident) => {
-        impl<'a, T> $imp<&'a [T]> for &'a Polynomial<T>
+        impl<'a, T, S> $imp<&'a [T]> for &'a Polynomial<T, S>
         where
             T: 'a + $imp<T, Output = T> + Zero + Clone,
+            S: Storage<T>,
         {
-            type Output = Polynomial<T>;
+            type Output = Polynomial<T, S>;
 
             #[inline(always)]
             fn $method(self, other: &[T]) -> Self::Output {
@@ -504,14 +595,15 @@ macro_rules! forward_ref_iter_binop {
 
 macro_rules! forward_iter_ref_binop {
     (impl $imp:ident, $method:ident) => {
-        impl<'a, T> $imp<&'a Polynomial<T>> for &'a [T]
+        impl<'a, T, S> $imp<&'a Polynomial<T, S>> for &'a [T]
         where
             T: $imp<T, Output = T> + Zero + Clone,
+            S: Storage<T>,
         {
-            type Output = Polynomial<T>;
+            type Output = Polynomial<T, S>;
 
             #[inline(always)]
-            fn $method(self, other: &'a Polynomial<T>) -> Self::Output {
+            fn $method(self, other: &'a Polynomial<T, S>) -> Self::Output {
                 $imp::$method(self, other.clone())
             }
         }
@@ -520,14 +612,15 @@ macro_rules! forward_iter_ref_binop {
 
 macro_rules! forward_iter_val_val_binop {
     (impl $imp:ident, $method:ident) => {
-        impl<T> $imp<Polynomial<T>> for Polynomial<T>
+        impl<T, S> $imp<Polynomial<T, S>> for Polynomial<T, S>
         where
             T: $imp<T, Output = T> + Zero + Clone,
+            S: Storage<T>,
         {
-            type Output = Polynomial<T>;
+            type Output = Polynomial<T, S>;
 
             #[inline(always)]
-            fn $method(self, other: Polynomial<T>) -> Self::Output {
+            fn $method(self, other: Polynomial<T, S>) -> Self::Output {
                 if self.data.capacity() >= other.data.capacity() {
                     $imp::$method(self, other.data.as_slice())
                 } else {
@@ -540,14 +633,15 @@ macro_rules! forward_iter_val_val_binop {
 
 macro_rules! forward_iter_ref_val_binop {
     (impl $imp:ident, $method:ident) => {
-        impl<'a, T> $imp<Polynomial<T>> for &'a Polynomial<T>
+        impl<'a, T, S> $imp<Polynomial<T, S>> for &'a Polynomial<T, S>
         where
             T: $imp<T, Output = T> + Zero + Clone,
+            S: Storage<T>,
         {
-            type Output = Polynomial<T>;
+            type Output = Polynomial<T, S>;
 
             #[inline(always)]
-            fn $method(self, other: Polynomial<T>) -> Self::Output {
+            fn $method(self, other: Polynomial<T, S>) -> Self::Output {
                 $imp::$method(self.data.as_slice(), other)
             }
         }
@@ -556,14 +650,15 @@ macro_rules! forward_iter_ref_val_binop {
 
 macro_rules! forward_iter_val_ref_binop {
     (impl $imp:ident, $method:ident) => {
-        impl<'a, T> $imp<&'a Polynomial<T>> for Polynomial<T>
+        impl<'a, T, S> $imp<&'a Polynomial<T, S>> for Polynomial<T, S>
         where
             T: $imp<T, Output = T> + Zero + Clone,
+            S: Storage<T>,
         {
-            type Output = Polynomial<T>;
+            type Output = Polynomial<T, S>;
 
             #[inline(always)]
-            fn $method(self, other: &'a Polynomial<T>) -> Self::Output {
+            fn $method(self, other: &'a Polynomial<T, S>) -> Self::Output {
                 $imp::$method(self, other.data.as_slice())
             }
         }
@@ -572,14 +667,15 @@ macro_rules! forward_iter_val_ref_binop {
 
 macro_rules! forward_iter_ref_ref_binop {
     (impl $imp:ident, $method:ident) => {
-        impl<'a, 'b, T> $imp<&'b Polynomial<T>> for &'a Polynomial<T>
+        impl<'a, 'b, T, S> $imp<&'b Polynomial<T, S>> for &'a Polynomial<T, S>
         where
             T: $imp<T, Output = T> + Zero + Clone,
+            S: Storage<T>,
         {
-            type Output = Polynomial<T>;
+            type Output = Polynomial<T, S>;
 
             #[inline(always)]
-            fn $method(self, other: &'b Polynomial<T>) -> Self::Output {
+            fn $method(self, other: &'b Polynomial<T, S>) -> Self::Output {
                 if self.data.len() >= other.data.len() {
                     $imp::$method(self, other.data.as_slice())
                 } else {
@@ -605,15 +701,20 @@ forward_iter_all_binop!(impl Add, add);
 forward_iter_all_binop!(impl Sub, sub);
 forward_iter_all_binop!(impl Mul, mul);
 
-impl<'a, T> Add<&'a [T]> for Polynomial<T>
+impl<'a, T, S> Add<&'a [T]> for Polynomial<T, S>
 where
     T: Zero + Add<T, Output = T> + Clone,
+    S: Storage<T>,
 {
-    type Output = Polynomial<T>;
+    type Output = Polynomial<T, S>;
 
     fn add(mut self, other: &'a [T]) -> Self::Output {
         let p_data = &mut self.data;
-        for (pi, si) in p_data.iter_mut().zip(other.into_iter().cloned()) {
+        for (pi, si) in p_data
+            .as_mut_slice()
+            .into_iter()
+            .zip(other.into_iter().cloned())
+        {
             *pi = pi.clone() + si;
         }
         if other.len() > p_data.len() {
@@ -626,26 +727,32 @@ where
     }
 }
 
-impl<'a, T> Add<Polynomial<T>> for &'a [T]
+impl<'a, T, S> Add<Polynomial<T, S>> for &'a [T]
 where
     T: Zero + Add<T, Output = T> + Clone,
+    S: Storage<T>,
 {
-    type Output = Polynomial<T>;
+    type Output = Polynomial<T, S>;
     #[inline(always)]
-    fn add(self, other: Polynomial<T>) -> Self::Output {
+    fn add(self, other: Polynomial<T, S>) -> Self::Output {
         other + self
     }
 }
 
-impl<'a, T> Sub<&'a [T]> for Polynomial<T>
+impl<'a, T, S> Sub<&'a [T]> for Polynomial<T, S>
 where
     T: Zero + Sub<T, Output = T> + Clone,
+    S: Storage<T>,
 {
-    type Output = Polynomial<T>;
+    type Output = Polynomial<T, S>;
 
     fn sub(mut self, other: &'a [T]) -> Self::Output {
         let p_data = &mut self.data;
-        for (pi, si) in p_data.iter_mut().zip(other.into_iter().cloned()) {
+        for (pi, si) in p_data
+            .as_mut_slice()
+            .into_iter()
+            .zip(other.into_iter().cloned())
+        {
             *pi = pi.clone() - si;
         }
         if other.len() > p_data.len() {
@@ -658,15 +765,20 @@ where
     }
 }
 
-impl<'a, T> Sub<Polynomial<T>> for &'a [T]
+impl<'a, T, S> Sub<Polynomial<T, S>> for &'a [T]
 where
     T: Zero + Sub<T, Output = T> + Clone,
+    S: Storage<T>,
 {
-    type Output = Polynomial<T>;
+    type Output = Polynomial<T, S>;
 
-    fn sub(self, mut other: Polynomial<T>) -> Self::Output {
+    fn sub(self, mut other: Polynomial<T, S>) -> Self::Output {
         let p_data = &mut other.data;
-        for (pi, si) in p_data.iter_mut().zip(self.into_iter().cloned()) {
+        for (pi, si) in p_data
+            .as_mut_slice()
+            .into_iter()
+            .zip(self.into_iter().cloned())
+        {
             *pi = si - pi.clone();
         }
         if self.len() > p_data.len() {
@@ -674,7 +786,7 @@ where
                 p_data.push(si);
             }
         } else {
-            for pi in &mut p_data[self.len()..] {
+            for pi in &mut p_data.as_mut_slice()[self.len()..] {
                 *pi = T::zero() - pi.clone();
             }
         }
@@ -683,18 +795,20 @@ where
     }
 }
 
-impl<'a, T> Mul<&'a [T]> for Polynomial<T>
+impl<'a, T, S> Mul<&'a [T]> for Polynomial<T, S>
 where
     T: Zero + Mul<T, Output = T> + Clone,
+    S: Storage<T>,
 {
-    type Output = Polynomial<T>;
+    type Output = Polynomial<T, S>;
 
     fn mul(mut self, other: &'a [T]) -> Self::Output {
-        let mut ai = match self.data.last() {
+        let data_slice = self.data.as_mut_slice();
+        let mut ai = match data_slice.last() {
             Some(v) => v.clone(),
             None => return self,
         };
-        let last_index = self.data.len() - 1;
+        let last_index = data_slice.len() - 1;
         let b0 = match other.get(0) {
             Some(v) => v.clone(),
             None => {
@@ -704,15 +818,18 @@ where
         };
         let other = &other[1..];
 
-        self.data[last_index] = ai.clone() * b0.clone();
+        data_slice[last_index] = ai.clone() * b0.clone();
+        let _ = data_slice;
         other
             .into_iter()
             .cloned()
             .for_each(|bj| self.data.push(ai.clone() * bj));
+
+        let data_slice = self.data.as_mut_slice();
         for i in (0..last_index).rev() {
-            ai = self.data[i].clone();
-            self.data[i] = ai.clone() * b0.clone();
-            self.data[(i + 1)..]
+            ai = data_slice[i].clone();
+            data_slice[i] = ai.clone() * b0.clone();
+            data_slice[(i + 1)..]
                 .iter_mut()
                 .zip(other.into_iter().cloned())
                 .for_each(|(v, bj)| *v = v.clone() + ai.clone() * bj.clone());
@@ -722,13 +839,14 @@ where
     }
 }
 
-impl<'a, T> Mul<Polynomial<T>> for &'a [T]
+impl<'a, T, S> Mul<Polynomial<T, S>> for &'a [T]
 where
     T: Zero + Mul<T, Output = T> + Clone,
+    S: Storage<T>,
 {
-    type Output = Polynomial<T>;
+    type Output = Polynomial<T, S>;
     #[inline]
-    fn mul(self, other: Polynomial<T>) -> Self::Output {
+    fn mul(self, other: Polynomial<T, S>) -> Self::Output {
         other * self
     }
 }
@@ -736,7 +854,10 @@ where
 impl<T: Zero + Clone> Zero for Polynomial<T> {
     #[inline]
     fn zero() -> Self {
-        Self { data: vec![] }
+        Self {
+            data: vec![],
+            _type: PhantomData,
+        }
     }
     #[inline]
     fn is_zero(&self) -> bool {
@@ -749,6 +870,7 @@ impl<T: Zero + One + Clone> One for Polynomial<T> {
     fn one() -> Self {
         Self {
             data: vec![One::one()],
+            _type: PhantomData,
         }
     }
 }
@@ -773,9 +895,9 @@ mod tests {
 
     macro_rules! test_binop {
         (impl $imp:ident, $method:ident, $a:expr, $b:expr, $res:expr) => {
-            let a = Polynomial::new(($a).into_iter().collect());
-            let b = Polynomial::new(($b).into_iter().collect());
-            let res = Polynomial::new(($res).into_iter().collect());
+            let a = Polynomial::new(($a).into_iter().collect::<Vec<_>>());
+            let b = Polynomial::new(($b).into_iter().collect::<Vec<_>>());
+            let res = Polynomial::new(($res).into_iter().collect::<Vec<_>>());
             assert_eq!($imp::$method(a.clone(), b.clone()), res);
             assert_eq!($imp::$method(a.clone(), &b), res);
             assert_eq!($imp::$method(&a, b.clone()), res);
@@ -851,7 +973,8 @@ mod tests {
         fn check(max_deg: usize, xyws: impl Iterator<Item = (f64, f64, f64)> + Clone) {
             const JITTER: f64 = 1e-7;
             for deg in 0..=max_deg {
-                let mut p = Polynomial::least_squares_fit_weighted(deg, xyws.clone()).unwrap();
+                let mut p =
+                    Polynomial::<_, Vec<_>>::least_squares_fit_weighted(deg, xyws.clone()).unwrap();
 
                 let diff: f64 = xyws
                     .clone()
@@ -889,7 +1012,7 @@ mod tests {
         check(5, xs.iter().map(|&x| (x, x.ln_1p(), 1. - x)));
 
         assert_eq!(
-            Polynomial::least_squares_fit(1, [(0., 0.), (0., 1.)].into_iter()),
+            Polynomial::<_, Vec<_>>::least_squares_fit(1, [(0., 0.), (0., 1.)].into_iter()),
             None
         );
     }
@@ -899,7 +1022,7 @@ mod tests {
         // Evaluate the lagrange polynomial at the x coordinates.
         // The error should be close to zero.
         fn check(xs: impl Iterator<Item = f64> + Clone, p: Polynomial<f64>) {
-            let p_test = Polynomial::lagrange(xs.map(|xi| (xi, p.eval(xi)))).unwrap();
+            let p_test = Polynomial::<_, Vec<_>>::lagrange(xs.map(|xi| (xi, p.eval(xi)))).unwrap();
             assert!(p_test.data.len() == p.data.len());
             p_test
                 .data
@@ -938,7 +1061,7 @@ mod tests {
         // Construct a Chebyshev approximation for a function
         // and evaulate it at 100 points.
         fn check<F: Fn(f64) -> f64>(f: &F, n: usize, xmin: f64, xmax: f64) {
-            let p = Polynomial::chebyshev(f, n, xmin, xmax).unwrap();
+            let p = Polynomial::<f64>::chebyshev(f, n, xmin, xmax).unwrap();
             for i in 0..=100 {
                 let x = xmin + (i as f64) * ((xmax - xmin) / 100.0);
                 let diff = (f(x) - p.eval(x)).abs();
@@ -953,6 +1076,6 @@ mod tests {
         check(&f64::ln, 5, 2., 1.);
 
         // Test n >= 1 condition
-        assert!(Polynomial::chebyshev(&f64::exp, 0, 0., 1.).is_none());
+        assert!(Polynomial::<f64>::chebyshev(&f64::exp, 0, 0., 1.).is_none());
     }
 }
