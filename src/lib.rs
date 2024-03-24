@@ -562,7 +562,7 @@ where
     type Output = Polynomial<T>;
 
     #[inline]
-    fn neg(mut self) -> Polynomial<T> {
+    fn neg(mut self) -> Self::Output {
         self.data.iter_mut().for_each(|c| *c = -c.clone());
         self
     }
@@ -575,7 +575,7 @@ where
     type Output = Polynomial<T>;
 
     #[inline]
-    fn neg(self) -> Polynomial<T> {
+    fn neg(self) -> Self::Output {
         -self.clone()
     }
 }
@@ -590,7 +590,7 @@ macro_rules! forward_ref_iter_binop {
             type Output = Polynomial<T>;
 
             #[inline(always)]
-            fn $method(self, other: Covered<I>) -> Polynomial<T> {
+            fn $method(self, other: Covered<I>) -> Self::Output {
                 $imp::$method(self.clone(), other)
             }
         }
@@ -607,7 +607,7 @@ macro_rules! forward_iter_ref_binop {
             type Output = Polynomial<T>;
 
             #[inline(always)]
-            fn $method(self, other: &'a Polynomial<T>) -> Polynomial<T> {
+            fn $method(self, other: &'a Polynomial<T>) -> Self::Output {
                 $imp::$method(self, other.clone())
             }
         }
@@ -623,7 +623,7 @@ macro_rules! forward_iter_val_val_binop {
             type Output = Polynomial<T>;
 
             #[inline(always)]
-            fn $method(self, other: Polynomial<T>) -> Polynomial<T> {
+            fn $method(self, other: Polynomial<T>) -> Self::Output {
                 if self.data.capacity() >= other.data.capacity() {
                     $imp::$method(self, other.data.iter().cloned().covered())
                 } else {
@@ -643,7 +643,7 @@ macro_rules! forward_iter_ref_val_binop {
             type Output = Polynomial<T>;
 
             #[inline(always)]
-            fn $method(self, other: Polynomial<T>) -> Polynomial<T> {
+            fn $method(self, other: Polynomial<T>) -> Self::Output {
                 $imp::$method(self.data.iter().cloned().covered(), other)
             }
         }
@@ -659,7 +659,7 @@ macro_rules! forward_iter_val_ref_binop {
             type Output = Polynomial<T>;
 
             #[inline(always)]
-            fn $method(self, other: &'a Polynomial<T>) -> Polynomial<T> {
+            fn $method(self, other: &'a Polynomial<T>) -> Self::Output {
                 $imp::$method(self, other.data.iter().cloned().covered())
             }
         }
@@ -675,7 +675,7 @@ macro_rules! forward_iter_ref_ref_binop {
             type Output = Polynomial<T>;
 
             #[inline(always)]
-            fn $method(self, other: &'b Polynomial<T>) -> Polynomial<T> {
+            fn $method(self, other: &'b Polynomial<T>) -> Self::Output {
                 if self.data.len() >= other.data.len() {
                     $imp::$method(self, other.data.iter().cloned().covered())
                 } else {
@@ -708,7 +708,7 @@ where
 {
     type Output = Polynomial<T>;
 
-    fn add(mut self, iter: Covered<I>) -> Polynomial<T> {
+    fn add(mut self, iter: Covered<I>) -> Self::Output {
         let poly_len = self.data.len();
         for (j, bj) in iter.0.enumerate() {
             if j < poly_len {
@@ -729,7 +729,7 @@ where
 {
     type Output = Polynomial<T>;
     #[inline(always)]
-    fn add(self, poly: Polynomial<T>) -> Polynomial<T> {
+    fn add(self, poly: Polynomial<T>) -> Self::Output {
         poly + self
     }
 }
@@ -741,7 +741,7 @@ where
 {
     type Output = Polynomial<T>;
 
-    fn sub(mut self, iter: Covered<I>) -> Polynomial<T> {
+    fn sub(mut self, iter: Covered<I>) -> Self::Output {
         let poly_len = self.data.len();
         for (j, bj) in iter.0.enumerate() {
             if j < poly_len {
@@ -762,7 +762,7 @@ where
 {
     type Output = Polynomial<T>;
 
-    fn sub(self, mut poly: Polynomial<T>) -> Polynomial<T> {
+    fn sub(self, mut poly: Polynomial<T>) -> Self::Output {
         let poly_len = poly.data.len();
         let mut j = 0;
         for bj in self.0 {
@@ -790,7 +790,7 @@ where
 {
     type Output = Polynomial<T>;
 
-    fn mul(mut self, mut iter: Covered<I>) -> Polynomial<T> {
+    fn mul(mut self, mut iter: Covered<I>) -> Self::Output {
         let mut ai = match self.data.last() {
             Some(v) => v.clone(),
             None => return self,
@@ -826,7 +826,7 @@ where
 {
     type Output = Polynomial<T>;
     #[inline]
-    fn mul(self, poly: Polynomial<T>) -> Polynomial<T> {
+    fn mul(self, poly: Polynomial<T>) -> Self::Output {
         poly * self
     }
 }
