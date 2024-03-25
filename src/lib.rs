@@ -61,8 +61,12 @@
 #![warn(unused_results)]
 #![forbid(unsafe_code)]
 
+mod storage;
+
+#[cfg(feature = "alloc")]
 extern crate alloc;
-use alloc::{vec, vec::Vec};
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use core::fmt::Display;
 use core::marker::PhantomData;
 use core::ops::{Add, Div, Mul, Neg, Sub};
@@ -70,94 +74,19 @@ use core::{fmt, mem};
 use num_traits::{Float, FloatConst, FromPrimitive, One, Zero};
 
 pub use num_traits;
-
-/// Represents a slice like storage type.
-pub trait Storage<T>: Clone {
-    /// Create a new storage instance.
-    fn new() -> Self;
-
-    /// Create a new storage instance with at least `capacity` capacity.
-    /// Is allowed to panic if the storage type cannot support the requested capacity.
-    fn with_capacity(capacity: usize) -> Self;
-
-    /// Clears all data in the storage.
-    fn clear(&mut self);
-
-    /// Push an element to storage.
-    fn push(&mut self, value: T);
-
-    /// Pop the last element from storage.
-    fn pop(&mut self) -> Option<T>;
-
-    /// Return an immutable refrence to the data.
-    fn as_slice(&self) -> &[T];
-
-    /// Return a mutable reference to the data.
-    fn as_mut_slice(&mut self) -> &mut [T];
-
-    /// Return the length of the data. Should always concide with the
-    /// the slice's length.
-    #[inline]
-    fn len(&self) -> usize {
-        self.as_slice().len()
-    }
-
-    /// Return the capacity of the storage type.
-    fn capacity(&self) -> usize;
-}
-
-impl<T> Storage<T> for Vec<T>
-where
-    T: Clone,
-{
-    #[inline]
-    fn new() -> Self {
-        Self::new()
-    }
-
-    #[inline]
-    fn with_capacity(capacity: usize) -> Self {
-        Self::with_capacity(capacity)
-    }
-
-    #[inline]
-    fn clear(&mut self) {
-        self.clear();
-    }
-
-    #[inline]
-    fn push(&mut self, value: T) {
-        self.push(value);
-    }
-
-    #[inline]
-    fn pop(&mut self) -> Option<T> {
-        self.pop()
-    }
-
-    #[inline]
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    #[inline]
-    fn capacity(&self) -> usize {
-        self.capacity()
-    }
-
-    fn as_slice(&self) -> &[T] {
-        self.as_slice()
-    }
-
-    fn as_mut_slice(&mut self) -> &mut [T] {
-        self.as_mut_slice()
-    }
-}
+use storage::{Storage, StorageProvider};
 
 /// A polynomial.
+#[cfg(feature = "alloc")]
 #[derive(Eq, PartialEq, Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Polynomial<T, S: Storage<T> = Vec<T>> {
+    data: S,
+    _type: PhantomData<T>,
+}
+
+#[cfg(not(feature = "alloc"))]
+pub struct Polynomial<T, S: Storage<T>> {
     data: S,
     _type: PhantomData<T>,
 }
@@ -342,7 +271,7 @@ where
         b_0 = b_0 / gamma_0.clone();
         d_0 = d_0 / gamma_0.clone();
 
-        let mut p_data = S::with_capacity(deg + 1);
+        let mut p_data = S::Provider::new().storage_with_capacity(deg + 1);
 
         if deg == 0 {
             p_data.push(d_0);
@@ -443,8 +372,9 @@ where
     /// assert_eq!("10.0x^2", format!("{:.1}",poly));
     /// ```
     pub fn lagrange(samples: impl Iterator<Item = (T, T)> + Clone) -> Option<Self> {
-        let mut res = Polynomial::new(S::new());
-        let mut li = Polynomial::new(S::new());
+        let mut provider = S::Provider::new();
+        let mut res = Polynomial::new(provider.new_storage());
+        let mut li = Polynomial::new(provider.new_storage());
         for (i, (x, y)) in samples.clone().enumerate() {
             li.data.clear();
             li.data.push(T::one());
@@ -472,6 +402,7 @@ impl<T, S> Polynomial<T, S>
 where
     T: Zero + One + FloatConst + Float + FromPrimitive,
     S: Storage<T>,
+    S::Provider: StorageProvider<(T, T)> + StorageProvider<T>,
 {
     /// [Chebyshev approximation] fits a function $f(x)$ over to a polynomial by taking $n-1$
     /// samples of $f$ on some interval $[a, b]$.
@@ -499,7 +430,10 @@ where
             return None;
         }
 
-        let mut samples = Vec::with_capacity(n);
+        let mut samples = <S::Provider as StorageProvider<(T, T)>>::storage_with_capacity(
+            &mut <S::Provider as StorageProvider<(T, T)>>::new(),
+            n,
+        );
 
         let pi_over_n = T::PI() / T::from(n)?;
         let two = T::one() + T::one();
@@ -512,7 +446,7 @@ where
             samples.push((x, f(x)));
         }
 
-        Polynomial::lagrange(samples.iter().copied())
+        Polynomial::lagrange(samples.as_slice().into_iter().copied())
     }
 }
 
@@ -551,24 +485,29 @@ where
     }
 }
 
-impl<T> Neg for Polynomial<T>
+impl<T, S> Neg for Polynomial<T, S>
 where
     T: Neg<Output = T> + Clone,
+    S: Storage<T>,
 {
-    type Output = Polynomial<T>;
+    type Output = Polynomial<T, S>;
 
     #[inline]
     fn neg(mut self) -> Self::Output {
-        self.data.iter_mut().for_each(|c| *c = -c.clone());
+        self.data
+            .as_mut_slice()
+            .into_iter()
+            .for_each(|c| *c = -c.clone());
         self
     }
 }
 
-impl<'a, T> Neg for &'a Polynomial<T>
+impl<'a, T, S> Neg for &'a Polynomial<T, S>
 where
     T: Neg<Output = T> + Zero + Clone,
+    S: Storage<T>,
 {
-    type Output = Polynomial<T>;
+    type Output = Polynomial<T, S>;
 
     #[inline]
     fn neg(self) -> Self::Output {
@@ -851,37 +790,12 @@ where
     }
 }
 
-impl<T: Zero + Clone> Zero for Polynomial<T> {
-    #[inline]
-    fn zero() -> Self {
-        Self {
-            data: vec![],
-            _type: PhantomData,
-        }
-    }
-    #[inline]
-    fn is_zero(&self) -> bool {
-        self.data.is_empty()
-    }
-}
-
-impl<T: Zero + One + Clone> One for Polynomial<T> {
-    #[inline]
-    fn one() -> Self {
-        Self {
-            data: vec![One::one()],
-            _type: PhantomData,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     extern crate alloc;
-    use core::ops::{Add, Mul, Sub};
-
     use super::Polynomial;
     use alloc::{vec, vec::Vec};
+    use core::ops::{Add, Mul, Sub};
 
     #[test]
     fn new() {
