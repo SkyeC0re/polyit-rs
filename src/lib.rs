@@ -824,6 +824,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "alloc")]
     extern crate alloc;
     use crate::storage::{Storage, StorageProvider};
     use num_traits::Zero;
