@@ -119,22 +119,21 @@ pub mod tiny_vec {
     use super::{Storage, StorageProvider};
     #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
-    use core::marker::PhantomData;
     #[cfg(feature = "alloc")]
     use tinyvec::TinyVec;
     use tinyvec::{Array, ArrayVec};
 
-    pub struct TinyVecArrayStorage<A: Array>(PhantomData<A>);
+    pub struct TinyVecArrayStorage<const CAP: usize>;
 
-    impl<T, A> StorageProvider<T> for TinyVecArrayStorage<A>
+    impl<const CAP: usize, T> StorageProvider<T> for TinyVecArrayStorage<CAP>
     where
         T: Clone,
-        A: Array<Item = T> + Clone,
+        [T; CAP]: Array<Item = T>,
     {
-        type StorageType = ArrayVec<A>;
+        type StorageType = ArrayVec<[T; CAP]>;
         #[inline]
         fn new() -> Self {
-            Self(PhantomData)
+            Self
         }
 
         #[inline]
@@ -144,23 +143,23 @@ pub mod tiny_vec {
 
         #[inline]
         fn storage_with_capacity(&mut self, capacity: usize) -> Self::StorageType {
-            if capacity > A::CAPACITY {
+            if capacity > <[T; CAP] as Array>::CAPACITY {
                 panic!(
                     "Requested capacity of {} exceeds maximum of {}",
                     capacity,
-                    A::CAPACITY
+                    <[T; CAP] as Array>::CAPACITY
                 )
             }
             Self::StorageType::new()
         }
     }
 
-    impl<T, A> Storage<T> for ArrayVec<A>
+    impl<const CAP: usize, T> Storage<T> for ArrayVec<[T; CAP]>
     where
         T: Clone,
-        A: Array<Item = T> + Clone,
+        [T; CAP]: Array<Item = T>,
     {
-        type Provider = TinyVecArrayStorage<A>;
+        type Provider = TinyVecArrayStorage<CAP>;
 
         #[inline]
         fn clear(&mut self) {
@@ -199,18 +198,18 @@ pub mod tiny_vec {
     }
 
     #[cfg(feature = "alloc")]
-    pub struct TinyVecStorage<A: Array>(PhantomData<A>);
+    pub struct TinyVecStorage<const CAP: usize>;
 
     #[cfg(feature = "alloc")]
-    impl<T, A> StorageProvider<T> for TinyVecStorage<A>
+    impl<const CAP: usize, T> StorageProvider<T> for TinyVecStorage<CAP>
     where
         T: Clone,
-        A: Array<Item = T> + Clone,
+        [T; CAP]: Array<Item = T>,
     {
-        type StorageType = TinyVec<A>;
+        type StorageType = TinyVec<[T; CAP]>;
         #[inline]
         fn new() -> Self {
-            Self(PhantomData)
+            Self
         }
 
         #[inline]
@@ -220,7 +219,7 @@ pub mod tiny_vec {
 
         #[inline]
         fn storage_with_capacity(&mut self, capacity: usize) -> Self::StorageType {
-            if capacity <= A::CAPACITY {
+            if capacity <= <[T; CAP] as Array>::CAPACITY {
                 TinyVec::Inline(ArrayVec::new())
             } else {
                 TinyVec::Heap(Vec::with_capacity(capacity))
@@ -229,12 +228,12 @@ pub mod tiny_vec {
     }
 
     #[cfg(feature = "alloc")]
-    impl<T, A> Storage<T> for TinyVec<A>
+    impl<const CAP: usize, T> Storage<T> for TinyVec<[T; CAP]>
     where
         T: Clone,
-        A: Array<Item = T> + Clone,
+        [T; CAP]: Array<Item = T>,
     {
-        type Provider = TinyVecStorage<A>;
+        type Provider = TinyVecStorage<CAP>;
 
         #[inline]
         fn clear(&mut self) {
