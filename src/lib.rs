@@ -955,17 +955,6 @@ mod tests {
         assert_eq!(-(-p.clone()), p);
     }
 
-    // #[test]
-    // fn add() {
-    //     let empty: [i32; 0] = [];
-    //     test_binop!(impl Add, add, empty, empty, empty, Vec);
-    //     test_binop!(impl Add, add, empty, [1], [1], Vec);
-    //     test_binop!(impl Add, add, [1], empty, [1], Vec);
-    //     test_binop!(impl Add, add, [1, 2, 3], [-1, -2, -3], empty, Vec);
-    //     test_binop!(impl Add, add, [0, 2, 4], [1, 3, 5], [1, 5, 9], Vec);
-    //     test_binop!(impl Add, add, [1, 2, 3], [3, 2, 1], [4, 4, 4], Vec);
-    // }
-
     fn test_add<S: Storage<i32>>() {
         let empty: [i32; 0] = [];
         fn check<S: Storage<i32>>(a: &[i32], b: &[i32], res: &[i32]) {
@@ -1020,45 +1009,6 @@ mod tests {
         check::<S>(&[0, 0, 1], &[0, -1], &[0, 0, 0, -1]);
     }
 
-    // #[test]
-    // fn sub() {
-    //     let empty: [i32; 0] = [];
-    //     test_binop!(impl Sub, sub, empty, empty, empty);
-    //     test_binop!(impl Sub, sub, empty, [1], [-1]);
-    //     test_binop!(impl Sub, sub, [1], empty, [1]);
-    //     test_binop!(impl Sub, sub, [1, 2, 3], [1, 2, 3], empty);
-    //     test_binop!(impl Sub, sub, [0, 2, 4], [1, 3, 5], [-1, -1, -1]);
-    //     test_binop!(impl Sub, sub, [1, 2, 3], [3, 2, 1], [-2, 0, 2]);
-    // }
-
-    // #[test]
-    // fn mul() {
-    //     let empty: [i32; 0] = [];
-    //     test_binop!(impl Mul, mul, empty, empty, empty);
-    //     test_binop!(impl Mul, mul, empty, [1], empty);
-    //     test_binop!(impl Mul, mul, [1], empty, empty);
-    //     test_binop!(impl Mul, mul, [0], [1, 2], empty);
-    //     test_binop!(impl Mul, mul, [1, 2], [0], empty);
-    //     test_binop!(impl Mul, mul, [1], [1], [1]);
-    //     test_binop!(impl Mul, mul, [1, -3], [1, -3], [1, -6, 9]);
-    //     test_binop!(impl Mul, mul, [1, 1], [1, 0, 1], [1, 1, 1, 1]);
-    //     test_binop!(impl Mul, mul, [0, 0, 1], [0, -1], [0, 0, 0, -1]);
-    // }
-
-    // #[test]
-    // fn eval() {
-    //     fn check<F: Fn(i32) -> i32>(pol: &[i32], f: F) {
-    //         for n in -10..10 {
-    //             assert_eq!(f(n), Polynomial::new(pol.to_vec()).eval(n));
-    //         }
-    //     }
-    //     check(&[], |_x| 0);
-    //     check(&[1], |_x| 1);
-    //     check(&[1, 1], |x| x + 1);
-    //     check(&[0, 1], |x| x);
-    //     check(&[10, -10, 10], |x| 10 * x * x - 10 * x + 10);
-    // }
-
     fn test_eval<S: Storage<i32>>() {
         fn check<F: Fn(i32) -> i32, S: Storage<i32>>(pol: &[i32], f: F) {
             for n in -10..10 {
@@ -1071,55 +1021,6 @@ mod tests {
         check::<_, S>(&[0, 1], |x| x);
         check::<_, S>(&[10, -10, 10], |x| 10 * x * x - 10 * x + 10);
     }
-
-    // #[test]
-    // fn least_squares() {
-    //     fn check(max_deg: usize, xyws: impl Iterator<Item = (f64, f64, f64)> + Clone) {
-    //         const JITTER: f64 = 1e-7;
-    //         for deg in 0..=max_deg {
-    //             let mut p =
-    //                 Polynomial::<_, Vec<_>>::least_squares_fit_weighted(deg, xyws.clone()).unwrap();
-
-    //             let diff: f64 = xyws
-    //                 .clone()
-    //                 .map(|(xi, yi, wi)| wi * (p.eval(xi) - yi).powi(2))
-    //                 .sum();
-
-    //             for i in 0..p.data.len() {
-    //                 for sgn in [-1., 1.] {
-    //                     let bckp = p.data[i];
-    //                     p.data[i] += sgn * JITTER;
-    //                     let jitter_diff: f64 = xyws
-    //                         .clone()
-    //                         .map(|(xi, yi, wi)| wi * (p.eval(xi) - yi).powi(2))
-    //                         .sum();
-
-    //                     assert!(
-    //                         diff <= jitter_diff,
-    //                         "Jitter caused better fit: {:?}>{:?}, deg={}, i={}",
-    //                         diff,
-    //                         jitter_diff,
-    //                         deg,
-    //                         i
-    //                     );
-
-    //                     p.data[i] = bckp
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     let xs: Vec<f64> = (0..50).map(|x| x as f64 / 50.).collect();
-
-    //     check(2, xs.iter().map(|&x| (x, x.powi(2), 1.)));
-    //     check(3, xs.iter().map(|&x| (x, x.powi(4) - x + 3., x)));
-    //     check(5, xs.iter().map(|&x| (x, x.ln_1p(), 1. - x)));
-
-    //     assert_eq!(
-    //         Polynomial::<_, Vec<_>>::least_squares_fit(1, [(0., 0.), (0., 1.)].into_iter()),
-    //         None
-    //     );
-    // }
 
     fn test_least_squares<S: Storage<f64>>() {
         fn check<S: Storage<f64>>(
@@ -1172,45 +1073,6 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn lagrange() {
-    //     // Evaluate the lagrange polynomial at the x coordinates.
-    //     // The error should be close to zero.
-    //     fn check(xs: impl Iterator<Item = f64> + Clone, p: Polynomial<f64>) {
-    //         let p_test = Polynomial::<_, Vec<_>>::lagrange(xs.map(|xi| (xi, p.eval(xi)))).unwrap();
-    //         assert!(p_test.data.len() == p.data.len());
-    //         p_test
-    //             .data
-    //             .into_iter()
-    //             .zip(p.data.into_iter())
-    //             .for_each(|(c_test, c)| assert!((c_test - c).abs() < 1e-9));
-    //     }
-
-    //     // Squares
-    //     check([1., 2., 3.].iter().copied(), Polynomial::new(vec![0., 10.]));
-    //     // Cubes
-    //     check(
-    //         [-1., 0., 1., 2.].iter().copied(),
-    //         Polynomial::new(vec![0., 0., 0., 1.]),
-    //     );
-    //     // Non linear x.
-    //     check(
-    //         [1., 9., 10., 11.].iter().copied(),
-    //         Polynomial::new(vec![-1., 2., -3., 4.]),
-    //     );
-
-    //     // Test double x failure case.
-    //     assert_eq!(
-    //         Polynomial::<f64>::lagrange(
-    //             [1., 9., 9., 11.]
-    //                 .iter()
-    //                 .copied()
-    //                 .zip([1., 2., 3., 4.].iter().copied())
-    //         ),
-    //         None
-    //     );
-    // }
-
     fn test_lagrange<S: Storage<f64>>() {
         // Evaluate the lagrange polynomial at the x coordinates.
         // The error should be close to zero.
@@ -1251,29 +1113,6 @@ mod tests {
             None
         );
     }
-
-    // #[test]
-    // fn chebyshev() {
-    //     // Construct a Chebyshev approximation for a function
-    //     // and evaulate it at 100 points.
-    //     fn check<F: Fn(f64) -> f64>(f: &F, n: usize, xmin: f64, xmax: f64) {
-    //         let p = Polynomial::<f64>::chebyshev(f, n, xmin, xmax).unwrap();
-    //         for i in 0..=100 {
-    //             let x = xmin + (i as f64) * ((xmax - xmin) / 100.0);
-    //             let diff = (f(x) - p.eval(x)).abs();
-    //             assert!(diff < 1e-4);
-    //         }
-    //     }
-
-    //     // Approximate some common functions.
-    //     use core::f64::consts::PI;
-    //     check(&f64::sin, 7, -PI / 2., PI / 2.);
-    //     check(&f64::cos, 7, 0., PI / 4.);
-    //     check(&f64::ln, 5, 2., 1.);
-
-    //     // Test n >= 1 condition
-    //     assert!(Polynomial::<f64>::chebyshev(&f64::exp, 0, 0., 1.).is_none());
-    // }
 
     fn test_chebyshev<S>()
     where
