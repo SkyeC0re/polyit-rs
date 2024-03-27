@@ -1,5 +1,5 @@
 //! # poly_it
-//! A no-std library for manipulating polynomials with slice support and minimal allocation.
+//! A no-std library for manipulating polynomials with slice support and minimal allocation (or no allocation).
 //!
 //! At the end of the day the classical representation method for the polynomial is
 //! its coefficients and this library leverages this by means of slices.  
@@ -49,6 +49,20 @@
 //! ```
 //! the polynomial whose data vector has the highest capacity will be selected. If a new allocation is desired, use
 //! references.
+//!
+//! ## Stack Storage
+//!
+//! By default this crate has the `alloc` feature enabled and sets the default storage mechanism for [`Polynomial`](struct@Polynomial)
+//! to `Vec`. It is however possible to have array backing for a polynomial with the `tinyvec` feature:
+//! ```
+//! extern crate poly_it;
+//! use poly_it::{Polynomial, storage::tinyvec::ArrayVec};
+//!
+//!
+//! pub fn main() {
+//!     let p1 = Polynomial::new(ArrayVec::from([1, 2, 3]));
+//! }
+//!```
 #![no_std]
 #![warn(bad_style)]
 #![warn(missing_docs)]
@@ -61,7 +75,7 @@
 #![warn(unused_results)]
 #![forbid(unsafe_code)]
 
-mod storage;
+pub mod storage;
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

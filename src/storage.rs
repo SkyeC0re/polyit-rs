@@ -1,6 +1,15 @@
+//! This module provides storage solution abstractions. This is done via the [`StorageProvider`](trait@StorageProvider)
+//! and [`Storage`](trait@Storage) traits. Conceptually the storage type represent the specific instance of storage in question,
+//! e.g. a `Vec<f64>`, whereas the storage provider represents the underlying container or mechanism, e.g. `Vec` and provides
+//! a means to create different instances using that container or mechanism type.
+//!
+
+/// A trait for represting the underlying storage container or mechanism family.
 pub trait StorageProvider<T> {
+    /// The storage type that this family provides for `T` type elements.
     type StorageType: Storage<T>;
 
+    /// Create a new storage provider.
     fn new() -> Self;
 
     /// Create a new storage instance.
@@ -11,8 +20,9 @@ pub trait StorageProvider<T> {
     fn storage_with_capacity(&mut self, capacity: usize) -> Self::StorageType;
 }
 
-/// Represents a slice like storage type.
+/// Represents a slice-like storage type for a specific type of element.
 pub trait Storage<T>: Clone {
+    /// A reference to the underlying storage provider family.
     type Provider: StorageProvider<T, StorageType = Self>;
 
     /// Clears all data in the storage.
@@ -43,11 +53,13 @@ pub trait Storage<T>: Clone {
 
 #[cfg(feature = "alloc")]
 pub mod vec {
+    //! The `Vec` storage family.
     extern crate alloc;
     use alloc::vec::Vec;
 
     use super::{Storage, StorageProvider};
 
+    /// Represents the vector storage family.
     pub struct VecStorage;
 
     impl<T> StorageProvider<T> for VecStorage
@@ -115,14 +127,16 @@ pub mod vec {
 }
 
 #[cfg(feature = "tinyvec")]
-pub mod tiny_vec {
+pub mod tinyvec {
+    //! [TinyVec](https://docs.rs/tinyvec/latest/tinyvec/) storage families.
     use super::{Storage, StorageProvider};
     #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
     #[cfg(feature = "alloc")]
-    use tinyvec::TinyVec;
-    use tinyvec::{Array, ArrayVec};
+    pub use tinyvec::TinyVec;
+    pub use tinyvec::{Array, ArrayVec};
 
+    /// Represents the `tinyvec::Array` storage family of a particular capacity.
     pub struct TinyVecArrayStorage<const CAP: usize>;
 
     impl<const CAP: usize, T> StorageProvider<T> for TinyVecArrayStorage<CAP>
@@ -198,6 +212,7 @@ pub mod tiny_vec {
     }
 
     #[cfg(feature = "alloc")]
+    /// Represents the `tinyvec::TinyVec` storage family of a particular stack capacity.
     pub struct TinyVecStorage<const CAP: usize>;
 
     #[cfg(feature = "alloc")]
