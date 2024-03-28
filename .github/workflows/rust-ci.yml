@@ -25,7 +25,10 @@ jobs:
       matrix:
         feature_flags:
           - "--workspace --all-features"
+          - "--workspace"
           - "--workspace --no-default-features --tests --features tinyvec"
+          - "--workspace --no-default-features --tests --features arrayvec"
+          - "--workspace --no-default-features --tests --features smallvec"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@v1
@@ -49,6 +52,8 @@ jobs:
         feature_flags:
           - "--workspace --all-features"
           - "--workspace --no-default-features --tests --features tinyvec"
+          - "--workspace --no-default-features --tests --features arrayvec"
+          - "--workspace --no-default-features --tests --features smallvec"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@v1
