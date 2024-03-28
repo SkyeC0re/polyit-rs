@@ -8,7 +8,7 @@
 [![Rust CI](https://github.com/SkyeC0re/polyit-rs/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/SkyeC0re/polyit-rs/actions/workflows/rust-ci.yml)
 [![codecov](https://codecov.io/gh/SkyeC0re/polyit-rs/branch/master/graph/badge.svg?token=UIj6XoEUBm)](https://codecov.io/gh/SkyeC0re/polyit-rs)
 
-A no-std library for manipulating polynomials with slice support and minimal allocation.
+A `no_std` library for manipulating polynomials with slice support and minimal allocation.
 
 [Documentation](https://docs.rs/poly_it/latest/)
 
@@ -18,20 +18,17 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-poly_it = "0.2.0"
+poly_it = "0.2.1"
 ```
 
 ## no_std environments
 
-The library can be used in a `no_std` environment, so long as a global allocator is present.
+The library is `no_std` by default but assumes a global allocator. It can also be used entirely without one if the default features
+are disabled and either of the `tinyvec` or `arrayvec` features are enabled.
 
 ## Minimum supported Rust version (MSRV)
 
-The minimum supported Rust version is **Rust 1.70.0**.
-At least the last 3 versions of stable Rust are supported at any given time.
-
-While a crate is pre-release status (0.x.x) it may have its MSRV bumped in a patch release.
-Once a crate has reached 1.x, any MSRV bump will be accompanied with a new minor version.
+The minimum supported Rust version is **Rust 1.56.0**.
 
 ## Acknowledgements
 
