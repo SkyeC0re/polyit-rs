@@ -28,7 +28,7 @@ are disabled and either of the `tinyvec` or `arrayvec` features are enabled.
 
 ## Minimum supported Rust version (MSRV)
 
-The minimum supported Rust version is **Rust 1.56.0**.
+The minimum supported Rust version is **Rust 1.60.0**.
 
 ## Acknowledgements
 
