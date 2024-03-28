@@ -4,7 +4,7 @@
 [![license](https://img.shields.io/crates/l/poly_it.svg)](LICENSE)
 [![crates.io](https://img.shields.io/crates/v/poly_it.svg)](https://crates.io/crates/poly_it)
 [![docs.rs](https://img.shields.io/docsrs/poly_it/latest)](https://docs.rs/poly_it/latest/)
-[![rust 1.70.0+ badge](https://img.shields.io/badge/rust-1.70.0+-93450a.svg)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field)
+[![rust 1.65.0+ badge](https://img.shields.io/badge/rust-1.65.0+-93450a.svg)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field)
 [![Rust CI](https://github.com/SkyeC0re/polyit-rs/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/SkyeC0re/polyit-rs/actions/workflows/rust-ci.yml)
 [![codecov](https://codecov.io/gh/SkyeC0re/polyit-rs/branch/master/graph/badge.svg?token=UIj6XoEUBm)](https://codecov.io/gh/SkyeC0re/polyit-rs)
 
