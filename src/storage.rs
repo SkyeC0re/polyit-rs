@@ -286,3 +286,157 @@ pub mod tinyvec {
         }
     }
 }
+
+#[cfg(feature = "arrayvec")]
+pub mod arrayvec {
+    //! [ArrayVec](https://docs.rs/arrayvec/latest/arrayvec/) storage family.
+    use super::{Storage, StorageProvider};
+    pub use arrayvec::ArrayVec;
+
+    /// Represents the `arrayvec::ArrayVec` storage family of a particular capacity.
+    pub struct ArrayVecStorage<const CAP: usize>;
+
+    impl<const CAP: usize, T> StorageProvider<T> for ArrayVecStorage<CAP>
+    where
+        T: Clone,
+    {
+        type StorageType = ArrayVec<T, CAP>;
+        #[inline]
+        fn new() -> Self {
+            Self
+        }
+
+        #[inline]
+        fn new_storage(&mut self) -> Self::StorageType {
+            Self::StorageType::new()
+        }
+
+        #[inline]
+        fn storage_with_capacity(&mut self, capacity: usize) -> Self::StorageType {
+            if capacity > CAP {
+                panic!(
+                    "Requested capacity of {} exceeds maximum of {}",
+                    capacity, CAP
+                )
+            }
+            Self::StorageType::new()
+        }
+    }
+
+    impl<const CAP: usize, T> Storage<T> for ArrayVec<T, CAP>
+    where
+        T: Clone,
+    {
+        type Provider = ArrayVecStorage<CAP>;
+
+        #[inline]
+        fn clear(&mut self) {
+            self.clear();
+        }
+
+        #[inline]
+        fn push(&mut self, value: T) {
+            self.push(value);
+        }
+
+        #[inline]
+        fn pop(&mut self) -> Option<T> {
+            self.pop()
+        }
+
+        #[inline]
+        fn len(&self) -> usize {
+            self.len()
+        }
+
+        #[inline]
+        fn capacity(&self) -> usize {
+            self.capacity()
+        }
+
+        #[inline]
+        fn as_slice(&self) -> &[T] {
+            self.as_slice()
+        }
+
+        #[inline]
+        fn as_mut_slice(&mut self) -> &mut [T] {
+            self.as_mut_slice()
+        }
+    }
+}
+
+#[cfg(feature = "smallvec")]
+pub mod smallvec {
+    //! [SmallVec](https://docs.rs/smallvec/latest/smallvec/) storage family.
+    use super::{Storage, StorageProvider};
+    pub use smallvec::{Array, SmallVec};
+
+    /// Represents the `smallvec::SmallVec` storage family of a particular stack capacity.
+    pub struct SmallVecStorage<const CAP: usize>;
+
+    impl<const CAP: usize, T> StorageProvider<T> for SmallVecStorage<CAP>
+    where
+        T: Clone,
+        [T; CAP]: Array<Item = T>,
+    {
+        type StorageType = SmallVec<[T; CAP]>;
+        #[inline]
+        fn new() -> Self {
+            Self
+        }
+
+        #[inline]
+        fn new_storage(&mut self) -> Self::StorageType {
+            Self::StorageType::new()
+        }
+
+        #[inline]
+        fn storage_with_capacity(&mut self, capacity: usize) -> Self::StorageType {
+            SmallVec::with_capacity(capacity)
+        }
+    }
+
+    impl<const CAP: usize, T> Storage<T> for SmallVec<[T; CAP]>
+    where
+        T: Clone,
+        [T; CAP]: Array<Item = T>,
+    {
+        type Provider = SmallVecStorage<CAP>;
+
+        #[inline]
+        fn clear(&mut self) {
+            self.clear();
+        }
+
+        #[inline]
+        fn push(&mut self, value: T) {
+            self.push(value);
+        }
+
+        #[inline]
+        fn pop(&mut self) -> Option<T> {
+            self.pop()
+        }
+
+        #[inline]
+        fn len(&self) -> usize {
+            self.len()
+        }
+
+        #[inline]
+        fn capacity(&self) -> usize {
+            self.capacity()
+        }
+
+        #[inline]
+        fn as_slice(&self) -> &[T] {
+            self.as_slice()
+        }
+
+        #[inline]
+        fn as_mut_slice(&mut self) -> &mut [T] {
+            self.as_mut_slice()
+        }
+    }
+}

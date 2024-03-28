@@ -927,6 +927,16 @@ mod tests {
     #[cfg(all(feature = "tinyvec", feature = "alloc"))]
     test_all_with_storage!(tinyvec, TinyVec10);
 
+    #[cfg(feature = "arrayvec")]
+    type ArrayVec<T> = arrayvec::ArrayVec<T, 10>;
+    #[cfg(feature = "arrayvec")]
+    test_all_with_storage!(arrayvec, ArrayVec);
+
+    #[cfg(feature = "smallvec")]
+    type SmallVec<T> = smallvec::SmallVec<[T; 3]>;
+    #[cfg(feature = "smallvec")]
+    test_all_with_storage!(smallvec, SmallVec);
+
     fn test_new<S: Storage<i32>>() {
         fn check<S: Storage<i32>>(dst: &[i32], src: &[i32]) {
             let mut data = S::Provider::new().new_storage();
