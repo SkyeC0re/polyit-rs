@@ -918,14 +918,14 @@ mod tests {
     #[cfg(feature = "alloc")]
     test_all_with_storage!(vec, Vec);
     #[cfg(feature = "tinyvec")]
-    type TinyVecArr10<T> = tinyvec::ArrayVec<[T; 10]>;
+    type TinyVecArr<T> = tinyvec::ArrayVec<[T; 10]>;
     #[cfg(feature = "tinyvec")]
-    test_all_with_storage!(tinyvec_arr, TinyVecArr10);
+    test_all_with_storage!(tinyvec_arr, TinyVecArr);
 
     #[cfg(all(feature = "tinyvec", feature = "alloc"))]
-    type TinyVec10<T> = tinyvec::TinyVec<[T; 10]>;
+    type TinyVec<T> = tinyvec::TinyVec<[T; 3]>;
     #[cfg(all(feature = "tinyvec", feature = "alloc"))]
-    test_all_with_storage!(tinyvec, TinyVec10);
+    test_all_with_storage!(tinyvec, TinyVec);
 
     #[cfg(feature = "arrayvec")]
     type ArrayVec<T> = arrayvec::ArrayVec<T, 10>;
