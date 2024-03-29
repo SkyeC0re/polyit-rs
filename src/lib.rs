@@ -233,6 +233,68 @@ where
 
 impl<T, S> Polynomial<T, S>
 where
+    T: Zero + One + Mul<T, Output = T> + Clone,
+    S: Storage<T> + Clone,
+{
+    /// Computes the derivative in place.
+    pub fn deriv_mut(&mut self) {
+        let data = self.data.as_mut_slice();
+        let mut i = 1;
+        let mut carry = T::zero();
+        while i < data.len() {
+            carry = carry + T::one();
+            data[i - 1] = carry.clone() * data[i].clone();
+            i += 1;
+        }
+
+        let _ = self.data.pop();
+    }
+
+    /// Computes the derivate.
+    #[inline]
+    pub fn deriv(&self) -> Self {
+        let mut ret = self.clone();
+        ret.deriv_mut();
+        ret
+    }
+}
+
+impl<T, S> Polynomial<T, S>
+where
+    T: Zero + One + Div<T, Output = T> + Clone,
+    S: Storage<T> + Clone,
+{
+    /// Computes the antiderivative at $C = 0$ in place.
+    pub fn antideriv_mut(&mut self) {
+        if self.data.len() == 0 {
+            return;
+        }
+        self.data.push(T::zero());
+        let data = self.data.as_mut_slice();
+
+        let mut i = 1;
+        let mut carry = T::zero();
+        let mut ci = T::zero();
+        mem::swap(&mut ci, &mut data[0]);
+        while i < data.len() {
+            carry = carry + T::one();
+            mem::swap(&mut ci, &mut data[i]);
+            data[i] = ci.clone() / carry.clone();
+            i += 1;
+        }
+    }
+
+    /// Computes the antiderivative at $C = 0$.
+    #[inline]
+    pub fn antideriv(&self) -> Self {
+        let mut ret = self.clone();
+        ret.antideriv_mut();
+        ret
+    }
+}
+
+impl<T, S> Polynomial<T, S>
+where
     T: Zero
         + One
         + Add<T, Output = T>
