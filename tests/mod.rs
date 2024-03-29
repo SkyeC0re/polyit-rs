@@ -70,6 +70,16 @@ macro_rules! test_all_with_storage {
             fn [<$prefix _chebyshev>]() {
                 test_chebyshev::<$storage<_>>()
             }
+
+            #[test]
+            fn [<$prefix _deriv>]() {
+                test_deriv::<$storage<_>>()
+            }
+
+            #[test]
+            fn [<$prefix _antideriv>]() {
+                test_antideriv::<$storage<_>>()
+            }
         }
     };
 }
@@ -322,4 +332,36 @@ where
 
     // Test n >= 1 condition
     assert!(Polynomial::<f64, S>::chebyshev(&f64::exp, 0, 0., 1.).is_none());
+}
+
+fn test_deriv<S>()
+where
+    S: Storage<i32>,
+{
+    let empty: [i32; 0] = [];
+    fn check<S: Storage<i32>>(a: &[i32], deriv_a: &[i32]) {
+        let a = poly_from_slice::<_, S>(a);
+        let deriv_a = poly_from_slice::<_, S>(deriv_a);
+        assert_eq!(a.deriv(), deriv_a);
+    }
+
+    check::<S>(&empty, &empty);
+    check::<S>(&[1], &empty);
+    check::<S>(&[1, 3, 5, 7], &[3, 10, 21]);
+}
+
+fn test_antideriv<S>()
+where
+    S: Storage<i32>,
+{
+    let empty: [i32; 0] = [];
+    fn check<S: Storage<i32>>(a: &[i32], antideriv_a: &[i32]) {
+        let a = poly_from_slice::<_, S>(a);
+        let antideriv_a = poly_from_slice::<_, S>(antideriv_a);
+        assert_eq!(a.antideriv(), antideriv_a);
+    }
+
+    check::<S>(&empty, &empty);
+    check::<S>(&[2], &[0, 2]);
+    check::<S>(&[1, 4, 9, 16], &[0, 1, 2, 3, 4]);
 }

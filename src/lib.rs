@@ -279,7 +279,7 @@ where
         while i < data.len() {
             carry = carry + T::one();
             mem::swap(&mut ci, &mut data[i]);
-            data[i] = ci.clone() / carry.clone();
+            data[i] = data[i].clone() / carry.clone();
             i += 1;
         }
     }
