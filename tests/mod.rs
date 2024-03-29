@@ -106,6 +106,20 @@ type SmallVec<T> = smallvec::SmallVec<[T; 3]>;
 #[cfg(feature = "smallvec")]
 test_all_with_storage!(smallvec, SmallVec);
 
+#[cfg(feature = "alloc")]
+#[test]
+fn test_display() {
+    assert_eq!(&format!("{}", Polynomial::new(Vec::<f64>::new())), "0");
+    assert_eq!(
+        &format!("{:.3}", Polynomial::new(vec![-1f64, 1f64])),
+        "-1.000 + 1.000x"
+    );
+    assert_eq!(
+        &format!("{:.1}", Polynomial::new(vec![1f64, 0f64, -2f64, 3f64])),
+        "1.0 + -2.0x^2 + 3.0x^3"
+    );
+}
+
 fn test_new<S: Storage<i32>>() {
     fn check<S: Storage<i32>>(dst: &[i32], src: &[i32]) {
         let mut data = S::Provider::new().new_storage();
