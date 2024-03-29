@@ -484,13 +484,14 @@ where
 
         let pi_over_n = T::PI() / T::from(n)?;
         let two = T::one() + T::one();
-        let half = T::one() / two;
-        let x_avg = (b + a) * half;
-        let x_half_delta = (b - a).abs() * half;
+        let mut k_phalf = T::one() / two;
+        let x_avg = (b + a) * k_phalf;
+        let x_half_delta = (b - a).abs() * k_phalf;
 
-        for k in 0..n {
-            let x = x_avg - x_half_delta * T::cos((T::from(k)? + half) * pi_over_n);
+        for _k in 0..n {
+            let x = x_avg - x_half_delta * T::cos(k_phalf * pi_over_n);
             samples.push((x, f(x)));
+            k_phalf = k_phalf + T::one();
         }
 
         Polynomial::lagrange(samples.as_slice().into_iter().copied())
