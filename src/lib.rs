@@ -139,7 +139,7 @@ where
 }
 
 impl<T: Zero, S: Storage<T>> Polynomial<T, S> {
-    /// Creates a new `Polynomial` from a `Vec` of coefficients. Automatically
+    /// Creates a new `Polynomial` from a storage of coefficients. Automatically
     /// trims all trailing zeroes from the data.
     ///
     /// # Examples
@@ -868,7 +868,6 @@ where
         let other = &other[1..];
 
         data_slice[last_index] = ai.clone() * b0.clone();
-        let _ = data_slice;
         other
             .into_iter()
             .cloned()
@@ -897,5 +896,151 @@ where
     #[inline]
     fn mul(self, other: Polynomial<T, S>) -> Self::Output {
         other * self
+    }
+}
+
+impl<T, S> Div<&[T]> for Polynomial<T, S>
+where
+    T: Zero + Mul<T, Output = T> + Div<T, Output = T> + Sub<T, Output = T> + PartialEq + Clone,
+    S: Storage<T>,
+{
+    type Output = (Polynomial<T, S>, Polynomial<T, S>);
+
+    fn div(mut self, other: &[T]) -> Self::Output {
+        self.trim();
+
+        let rem_data = self.coeffs_mut();
+
+        let mut cutoff = other.len();
+        for elem in other.into_iter().rev() {
+            if elem != &T::zero() {
+                break;
+            }
+            cutoff -= 1;
+        }
+
+        let div_data = &other[..cutoff];
+        let main_divisor = match div_data.last().filter(|_| div_data.len() <= rem_data.len()) {
+            Some(v) => v.clone(),
+            None => return (Polynomial::new(S::Provider::new().new_storage()), self),
+        };
+        let dd_lm1 = div_data.len() - 1;
+        let mut ret = Polynomial::new(
+            S::Provider::new().storage_with_capacity((rem_data.len() - div_data.len()) + 1),
+        );
+
+        for i in (dd_lm1..rem_data.len()).rev() {
+            let val = rem_data[i].clone() / main_divisor.clone();
+            for (r, d) in rem_data[(i - dd_lm1)..=i].iter_mut().zip(div_data.iter()) {
+                *r = r.clone() - val.clone() * d.clone()
+            }
+            ret.data.push(val);
+        }
+        ret.coeffs_mut().reverse();
+
+        ret.trim();
+        self.trim();
+
+        (ret, self)
+    }
+}
+
+impl<T, S> Div<Polynomial<T, S>> for &[T]
+where
+    T: Zero + Mul<T, Output = T> + Div<T, Output = T> + Sub<T, Output = T> + PartialEq + Clone,
+    S: Storage<T>,
+{
+    type Output = (Polynomial<T, S>, Polynomial<T, S>);
+
+    #[inline]
+    fn div(self, other: Polynomial<T, S>) -> Self::Output {
+        let mut owned_data = S::Provider::new().storage_with_capacity(self.len());
+        for elem in self {
+            owned_data.push(elem.clone());
+        }
+
+        Polynomial::new(owned_data) / other.coeffs()
+    }
+}
+
+impl<T, S1, S2> Div<Polynomial<T, S2>> for Polynomial<T, S1>
+where
+    T: Zero + Mul<T, Output = T> + Div<T, Output = T> + Sub<T, Output = T> + PartialEq + Clone,
+    S1: Storage<T>,
+    S2: Storage<T>,
+{
+    type Output = (Polynomial<T, S1>, Polynomial<T, S1>);
+
+    #[inline(always)]
+    fn div(self, other: Polynomial<T, S2>) -> Self::Output {
+        self / other.coeffs()
+    }
+}
+
+impl<T, S1, S2> Div<Polynomial<T, S2>> for &Polynomial<T, S1>
+where
+    T: Zero + Mul<T, Output = T> + Div<T, Output = T> + Sub<T, Output = T> + PartialEq + Clone,
+    S1: Storage<T>,
+    S2: Storage<T>,
+{
+    type Output = (Polynomial<T, S2>, Polynomial<T, S2>);
+
+    #[inline(always)]
+    fn div(self, other: Polynomial<T, S2>) -> Self::Output {
+        self.coeffs() / other
+    }
+}
+
+impl<T, S1, S2> Div<&Polynomial<T, S2>> for Polynomial<T, S1>
+where
+    T: Zero + Mul<T, Output = T> + Div<T, Output = T> + Sub<T, Output = T> + PartialEq + Clone,
+    S1: Storage<T>,
+    S2: Storage<T>,
+{
+    type Output = (Polynomial<T, S1>, Polynomial<T, S1>);
+
+    #[inline(always)]
+    fn div(self, other: &Polynomial<T, S2>) -> Self::Output {
+        self / other.coeffs()
+    }
+}
+
+impl<T, S1, S2> Div<&Polynomial<T, S2>> for &Polynomial<T, S1>
+where
+    T: Zero + Mul<T, Output = T> + Div<T, Output = T> + Sub<T, Output = T> + PartialEq + Clone,
+    S1: Storage<T>,
+    S2: Storage<T>,
+{
+    type Output = (Polynomial<T, S1>, Polynomial<T, S1>);
+
+    #[inline(always)]
+    fn div(self, other: &Polynomial<T, S2>) -> Self::Output {
+        self.clone() / other.coeffs()
+    }
+}
+
+impl<T, S> Div<&[T]> for &Polynomial<T, S>
+where
+    T: Zero + Mul<T, Output = T> + Div<T, Output = T> + Sub<T, Output = T> + PartialEq + Clone,
+    S: Storage<T>,
+{
+    type Output = (Polynomial<T, S>, Polynomial<T, S>);
+
+    #[inline(always)]
+    fn div(self, other: &[T]) -> Self::Output {
+        self.clone() / other
+    }
+}
+
+impl<T, S> Div<&Polynomial<T, S>> for &[T]
+where
+    T: Zero + Mul<T, Output = T> + Div<T, Output = T> + Sub<T, Output = T> + PartialEq + Clone,
+    S: Storage<T>,
+{
+    type Output = (Polynomial<T, S>, Polynomial<T, S>);
+
+    #[inline(always)]
+    fn div(self, other: &Polynomial<T, S>) -> Self::Output {
+        self / other.clone()
     }
 }

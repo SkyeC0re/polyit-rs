@@ -9,6 +9,7 @@ use poly_it::{
     storage::{Storage, StorageProvider},
     Polynomial,
 };
+use std::ops::Div;
 
 fn poly_from_slice<T, S>(slice: &[T]) -> Polynomial<T, S>
 where
@@ -49,6 +50,11 @@ macro_rules! test_all_with_storage {
             #[test]
             fn [<$prefix _mul>]() {
                 test_mul::<$storage<_>>()
+            }
+
+            #[test]
+            fn [<$prefix _div>]() {
+                test_div::<$storage<_>>()
             }
 
             #[test]
@@ -214,6 +220,34 @@ fn test_mul<S: Storage<i32>>() {
     check::<S>(&[1, -3], &[1, -3], &[1, -6, 9]);
     check::<S>(&[1, 1], &[1, 0, 1], &[1, 1, 1, 1]);
     check::<S>(&[0, 0, 1], &[0, -1], &[0, 0, 0, -1]);
+}
+
+fn test_div<S: Storage<i32>>() {
+    let empty: [i32; 0] = [];
+    fn check<S: Storage<i32>>(a: &[i32], b: &[i32], res: &[i32], rem: &[i32]) {
+        let a = poly_from_slice::<_, S>(a);
+        let b = poly_from_slice::<_, S>(b);
+        let res = (poly_from_slice::<_, S>(res), poly_from_slice::<_, S>(rem));
+        test_binop!(impl Div, div, a, b, res);
+    }
+
+    check::<S>(&empty, &empty, &empty, &empty);
+    check::<S>(&empty, &[1], &empty, &empty);
+    check::<S>(&[1], &empty, &empty, &[1]);
+    check::<S>(&[0], &[1, 2], &empty, &empty);
+    check::<S>(&[1, 2], &[0], &empty, &[1, 2]);
+    check::<S>(&[1], &[1], &[1], &[0]);
+    check::<S>(&[1, -3, 6], &[3, 5], &[-1, 1], &[4, -1, 1]);
+    // div  5 ->  5 , 7, 26, -8, 0
+    // div -2 ->  5, -7, 24, -2, 0
+    // div  8 -> 61,  1,  0, -2, 0
+    check::<S>(
+        &[5, 7, -9, -13, 15],
+        &[-7, -1, 3],
+        &[8, -2, 5],
+        &[61, 1, 0, -2],
+    );
+    check::<S>(&[0, 0, 1], &[0, -1], &[0, -1], &empty);
 }
 
 fn test_eval<S: Storage<i32>>() {
