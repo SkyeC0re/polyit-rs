@@ -63,6 +63,20 @@
 //!     let p1 = Polynomial::new(ArrayVec::from([1, 2, 3]));
 //! }
 //!```
+//!
+//! ## Polynomial Division
+//!
+//! Polynomial division is defined similar to polynomial long division, in the sense that for two polynomials $A$ and $B$, $A / B$
+//! produces a quotient $Q$ and a remainder $R$ such that:
+//! $$
+//! A \approx BQ + R
+//! $$
+//! up to the precision of the underlying numeric type (integer types can be seen as infinitely precise as their results
+//! conform to their mathematical closures i.e. 5 + 6 is exactly 11 and no precision loss occurs).
+//!
+//! A notable consequence of this is that $R$ may be of the same degree as $A$, even if $B$ has a degree greater than 0.
+//! As an example case, consider the division $(-10x + 1) / (7x + 2)$ for the 32 bit integer type.
+//! This will produce $Q = -1$ and $R = -3x + 3$.
 #![no_std]
 #![warn(bad_style)]
 #![warn(missing_docs)]
