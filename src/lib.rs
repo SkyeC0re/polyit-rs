@@ -44,7 +44,7 @@
 //! This crate attempts to minimize allocations by reusing the underlying allocated space of the polynomials when an
 //! owned [Polynomial](struct@Polynomial) is passed to a unary or binary operation. If more than one owned polynomial is passed,
 //! as would be the case with:
-//! ```text
+//! ```ignore
 //! let x = Polynomial::new(vec![1, 2, 3]) * Polynomial::new(vec![3, 2, 1]);
 //! ```
 //! the polynomial whose data vector has the highest capacity will be selected. If a new allocation is desired, use
@@ -54,7 +54,7 @@
 //!
 //! By default this crate has the `alloc` feature enabled and sets the default storage mechanism for [`Polynomial`](struct@Polynomial)
 //! to `Vec`. It is however possible to have array backing for a polynomial with the `tinyvec` feature:
-//! ```
+//! ```ignore
 //! extern crate poly_it;
 //! use poly_it::{Polynomial, storage::tinyvec::ArrayVec};
 //!
@@ -96,6 +96,7 @@ extern crate alloc;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use core::fmt::{Debug, Display};
+use core::iter::repeat;
 use core::marker::PhantomData;
 use core::ops::{Add, Div, Mul, Neg, Sub};
 use core::{fmt, mem};
@@ -136,24 +137,28 @@ where
 
 impl<T, S1, S2> PartialEq<Polynomial<T, S2>> for Polynomial<T, S1>
 where
-    T: PartialEq,
+    T: PartialEq + Zero,
     S1: Storage<T>,
     S2: Storage<T>,
 {
     fn eq(&self, other: &Polynomial<T, S2>) -> bool {
-        self.data.as_slice() == other.data.as_slice()
+        let mut short = self.coeffs();
+        let mut long = other.coeffs();
+
+        if short.len() > long.len() {
+            mem::swap(&mut short, &mut long);
+        }
+        let zero = T::zero();
+        short
+            .into_iter()
+            .chain(repeat(&zero))
+            .zip(long.into_iter())
+            .all(|(a, b)| a == b)
     }
 }
 
-impl<T, S> Eq for Polynomial<T, S>
-where
-    T: Eq,
-    S: Storage<T>,
-{
-}
-
 impl<T: Zero, S: Storage<T>> Polynomial<T, S> {
-    /// Creates a new `Polynomial` from a storage of coefficients. Automatically
+    /// Creates a new `Polynomial` from a storage of coefficients and automatically
     /// trims all trailing zeroes from the data.
     ///
     /// # Examples
@@ -163,7 +168,7 @@ impl<T: Zero, S: Storage<T>> Polynomial<T, S> {
     /// let poly = Polynomial::new(vec![1., 2., 3., 0.]);
     /// assert_eq!("1.00 + 2.00x + 3.00x^2", format!("{:.2}", poly));
     /// ```
-    #[inline]
+    #[inline(always)]
     pub fn new(data: S) -> Self {
         let mut p = Self {
             data,
@@ -171,6 +176,22 @@ impl<T: Zero, S: Storage<T>> Polynomial<T, S> {
         };
         p.trim();
         p
+    }
+    /// Creates a new `Polynomial` from a storage of coefficients.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use poly_it::Polynomial;
+    /// let poly = Polynomial::new_no_trim(vec![1, 2, 3, 0]);
+    /// assert_eq!("Polynomial { data: [1, 2, 3, 0] }", format!("{:?}", poly));
+    /// ```
+    #[inline(always)]
+    pub fn new_no_trim(data: S) -> Self {
+        Self {
+            data,
+            _type: PhantomData,
+        }
     }
 
     /// Trims all trailing zeros from the polynomial's coefficients.
@@ -182,35 +203,27 @@ impl<T: Zero, S: Storage<T>> Polynomial<T, S> {
     /// poly.trim();
     /// assert_eq!(poly.coeffs(), &[1]);
     /// ```
-    #[inline]
+    #[inline(always)]
     pub fn trim(&mut self) {
         while let Some(true) = self.data.as_slice().last().map(T::is_zero) {
             let _ = self.data.pop();
         }
     }
+}
 
+impl<T, S: Storage<T>> Polynomial<T, S> {
     /// Get an immutable reference to the polynomial's coefficients.
-    #[inline]
+    #[inline(always)]
     pub fn coeffs(&self) -> &[T] {
         self.data.as_slice()
     }
 
     /// Get a mutable reference to the polynomial's coefficients.
-    #[inline]
+    #[inline(always)]
     pub fn coeffs_mut(&mut self) -> &mut [T] {
         self.data.as_mut_slice()
     }
 }
-
-// impl<T, S> Into<S> for Polynomial<T, S>
-// where
-//     S: Storage<T>,
-// {
-//     #[inline]
-//     fn into(self) -> S {
-//         self.data
-//     }
-// }
 
 impl<T, S> Display for Polynomial<T, S>
 where
@@ -639,7 +652,7 @@ where
     }
 }
 
-macro_rules! forward_ref_iter_binop {
+macro_rules! forward_ref_slice_binop {
     (impl $imp:ident, $method:ident) => {
         impl<'a, T, S> $imp<&'a [T]> for &'a Polynomial<T, S>
         where
@@ -656,7 +669,7 @@ macro_rules! forward_ref_iter_binop {
     };
 }
 
-macro_rules! forward_iter_ref_binop {
+macro_rules! forward_slice_ref_binop {
     (impl $imp:ident, $method:ident) => {
         impl<'a, T, S> $imp<&'a Polynomial<T, S>> for &'a [T]
         where
@@ -673,7 +686,7 @@ macro_rules! forward_iter_ref_binop {
     };
 }
 
-macro_rules! forward_iter_val_val_binop {
+macro_rules! forward_val_val_binop {
     (impl $imp:ident, $method:ident) => {
         impl<T, S> $imp<Polynomial<T, S>> for Polynomial<T, S>
         where
@@ -694,7 +707,7 @@ macro_rules! forward_iter_val_val_binop {
     };
 }
 
-macro_rules! forward_iter_ref_val_binop {
+macro_rules! forward_ref_val_binop {
     (impl $imp:ident, $method:ident) => {
         impl<'a, T, S> $imp<Polynomial<T, S>> for &'a Polynomial<T, S>
         where
@@ -711,7 +724,7 @@ macro_rules! forward_iter_ref_val_binop {
     };
 }
 
-macro_rules! forward_iter_val_ref_binop {
+macro_rules! forward_val_ref_binop {
     (impl $imp:ident, $method:ident) => {
         impl<'a, T, S> $imp<&'a Polynomial<T, S>> for Polynomial<T, S>
         where
@@ -728,7 +741,7 @@ macro_rules! forward_iter_val_ref_binop {
     };
 }
 
-macro_rules! forward_iter_ref_ref_binop {
+macro_rules! forward_ref_ref_binop {
     (impl $imp:ident, $method:ident) => {
         impl<'a, 'b, T, S> $imp<&'b Polynomial<T, S>> for &'a Polynomial<T, S>
         where
@@ -751,12 +764,12 @@ macro_rules! forward_iter_ref_ref_binop {
 
 macro_rules! forward_iter_all_binop {
     (impl $imp:ident, $method:ident) => {
-        forward_ref_iter_binop!(impl $imp, $method);
-        forward_iter_ref_binop!(impl $imp, $method);
-        forward_iter_val_val_binop!(impl $imp, $method);
-        forward_iter_ref_val_binop!(impl $imp, $method);
-        forward_iter_val_ref_binop!(impl $imp, $method);
-        forward_iter_ref_ref_binop!(impl $imp, $method);
+        forward_ref_slice_binop!(impl $imp, $method);
+        forward_slice_ref_binop!(impl $imp, $method);
+        forward_val_val_binop!(impl $imp, $method);
+        forward_ref_val_binop!(impl $imp, $method);
+        forward_val_ref_binop!(impl $imp, $method);
+        forward_ref_ref_binop!(impl $imp, $method);
     };
 }
 

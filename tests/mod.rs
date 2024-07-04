@@ -33,6 +33,11 @@ macro_rules! test_all_with_storage {
             }
 
             #[test]
+            fn [<$prefix _eq>]() {
+                test_eq::<$storage<_>>()
+            }
+
+            #[test]
             fn [<$prefix _neg>]() {
                 test_neg::<$storage<_>>()
             }
@@ -127,6 +132,7 @@ fn test_display() {
 }
 
 fn test_new<S: Storage<i32>>() {
+    #[track_caller]
     fn check<S: Storage<i32>>(dst: &[i32], src: &[i32]) {
         let mut data = S::Provider::new().new_storage();
         for &elem in src {
@@ -137,6 +143,27 @@ fn test_new<S: Storage<i32>>() {
     check::<S>(&[1, 2, 3], &[1, 2, 3]);
     check::<S>(&[1, 2, 3], &[1, 2, 3, 0, 0]);
     check::<S>(&[], &[0, 0, 0]);
+}
+
+fn test_eq<S: Storage<i32>>() {
+    #[track_caller]
+    fn check<S: Storage<i32>>(a: &[i32], b: &[i32], eq: bool) {
+        let mut a_data = S::Provider::new().new_storage();
+        for &elem in a {
+            a_data.push(elem);
+        }
+        let mut b_data = S::Provider::new().new_storage();
+        for &elem in b {
+            b_data.push(elem);
+        }
+        assert_eq!(Polynomial::new(a_data) == Polynomial::new(b_data), eq);
+    }
+
+    check::<S>(&[], &[0, 0], true);
+    check::<S>(&[1], &[], false);
+    check::<S>(&[1, 2], &[1, 2, 3], false);
+    check::<S>(&[0, 0, 1], &[0, 0, 1, 0, 0], true);
+    check::<S>(&[1, 2, 3], &[1], false);
 }
 
 macro_rules! test_binop {
@@ -170,6 +197,7 @@ fn test_neg<S: Storage<i32>>() {
 
 fn test_add<S: Storage<i32>>() {
     let empty: [i32; 0] = [];
+    #[track_caller]
     fn check<S: Storage<i32>>(a: &[i32], b: &[i32], res: &[i32]) {
         let a = poly_from_slice::<_, S>(a);
         let b = poly_from_slice::<_, S>(b);
@@ -187,6 +215,7 @@ fn test_add<S: Storage<i32>>() {
 
 fn test_sub<S: Storage<i32>>() {
     let empty: [i32; 0] = [];
+    #[track_caller]
     fn check<S: Storage<i32>>(a: &[i32], b: &[i32], res: &[i32]) {
         let a = poly_from_slice::<_, S>(a);
         let b = poly_from_slice::<_, S>(b);
@@ -204,6 +233,7 @@ fn test_sub<S: Storage<i32>>() {
 
 fn test_mul<S: Storage<i32>>() {
     let empty: [i32; 0] = [];
+    #[track_caller]
     fn check<S: Storage<i32>>(a: &[i32], b: &[i32], res: &[i32]) {
         let a = poly_from_slice::<_, S>(a);
         let b = poly_from_slice::<_, S>(b);
@@ -224,6 +254,7 @@ fn test_mul<S: Storage<i32>>() {
 
 fn test_div<S: Storage<i32>>() {
     let empty: [i32; 0] = [];
+    #[track_caller]
     fn check<S: Storage<i32>>(a: &[i32], b: &[i32], res: &[i32], rem: &[i32]) {
         let a = poly_from_slice::<_, S>(a);
         let b = poly_from_slice::<_, S>(b);
@@ -251,6 +282,7 @@ fn test_div<S: Storage<i32>>() {
 }
 
 fn test_eval<S: Storage<i32>>() {
+    #[track_caller]
     fn check<F: Fn(i32) -> i32, S: Storage<i32>>(pol: &[i32], f: F) {
         for n in -10..10 {
             assert_eq!(f(n), poly_from_slice::<_, S>(pol).eval(n));
@@ -264,6 +296,7 @@ fn test_eval<S: Storage<i32>>() {
 }
 
 fn test_least_squares<S: Storage<f64>>() {
+    #[track_caller]
     fn check<S: Storage<f64>>(max_deg: usize, xyws: impl Iterator<Item = (f64, f64, f64)> + Clone) {
         const JITTER: f64 = 1e-7;
         for deg in 0..=max_deg {
@@ -313,6 +346,7 @@ fn test_least_squares<S: Storage<f64>>() {
 fn test_lagrange<S: Storage<f64>>() {
     // Evaluate the lagrange polynomial at the x coordinates.
     // The error should be close to zero.
+    #[track_caller]
     fn check<S: Storage<f64>>(xs: impl Iterator<Item = f64> + Clone, p: Polynomial<f64, S>) {
         let p_test = Polynomial::<_, S>::lagrange(xs.map(|xi| (xi, p.eval(xi)))).unwrap();
         assert!(p_test.coeffs().len() == p.coeffs().len());
@@ -358,6 +392,7 @@ where
 {
     // Construct a Chebyshev approximation for a function
     // and evaulate it at 100 points.
+    #[track_caller]
     fn check<F, S>(f: &F, n: usize, xmin: f64, xmax: f64)
     where
         F: Fn(f64) -> f64,
@@ -387,6 +422,7 @@ where
     S: Storage<i32>,
 {
     let empty: [i32; 0] = [];
+    #[track_caller]
     fn check<S: Storage<i32>>(a: &[i32], deriv_a: &[i32]) {
         let a = poly_from_slice::<_, S>(a);
         let deriv_a = poly_from_slice::<_, S>(deriv_a);
@@ -403,6 +439,7 @@ where
     S: Storage<i32>,
 {
     let empty: [i32; 0] = [];
+    #[track_caller]
     fn check<S: Storage<i32>>(a: &[i32], antideriv_a: &[i32]) {
         let a = poly_from_slice::<_, S>(a);
         let antideriv_a = poly_from_slice::<_, S>(antideriv_a);
