@@ -777,14 +777,14 @@ forward_iter_all_binop!(impl Add, add);
 forward_iter_all_binop!(impl Sub, sub);
 forward_iter_all_binop!(impl Mul, mul);
 
-impl<'a, T, S> Add<&'a [T]> for Polynomial<T, S>
+impl<T, S> Add<&[T]> for Polynomial<T, S>
 where
     T: Zero + Add<T, Output = T> + Clone,
     S: Storage<T>,
 {
     type Output = Polynomial<T, S>;
 
-    fn add(mut self, other: &'a [T]) -> Self::Output {
+    fn add(mut self, other: &[T]) -> Self::Output {
         let p_data = &mut self.data;
         for (pi, si) in p_data
             .as_mut_slice()
@@ -803,7 +803,7 @@ where
     }
 }
 
-impl<'a, T, S> Add<Polynomial<T, S>> for &'a [T]
+impl<T, S> Add<Polynomial<T, S>> for &[T]
 where
     T: Zero + Add<T, Output = T> + Clone,
     S: Storage<T>,
@@ -815,14 +815,14 @@ where
     }
 }
 
-impl<'a, T, S> Sub<&'a [T]> for Polynomial<T, S>
+impl<T, S> Sub<&[T]> for Polynomial<T, S>
 where
     T: Zero + Sub<T, Output = T> + Clone,
     S: Storage<T>,
 {
     type Output = Polynomial<T, S>;
 
-    fn sub(mut self, other: &'a [T]) -> Self::Output {
+    fn sub(mut self, other: &[T]) -> Self::Output {
         let p_data = &mut self.data;
         for (pi, si) in p_data
             .as_mut_slice()
@@ -841,7 +841,7 @@ where
     }
 }
 
-impl<'a, T, S> Sub<Polynomial<T, S>> for &'a [T]
+impl<T, S> Sub<Polynomial<T, S>> for &[T]
 where
     T: Zero + Sub<T, Output = T> + Clone,
     S: Storage<T>,
@@ -871,14 +871,14 @@ where
     }
 }
 
-impl<'a, T, S> Mul<&'a [T]> for Polynomial<T, S>
+impl<T, S> Mul<&[T]> for Polynomial<T, S>
 where
     T: Zero + Mul<T, Output = T> + Clone,
     S: Storage<T>,
 {
     type Output = Polynomial<T, S>;
 
-    fn mul(mut self, other: &'a [T]) -> Self::Output {
+    fn mul(mut self, other: &[T]) -> Self::Output {
         let data_slice = self.data.as_mut_slice();
         let mut ai = match data_slice.last() {
             Some(v) => v.clone(),
@@ -914,7 +914,7 @@ where
     }
 }
 
-impl<'a, T, S> Mul<Polynomial<T, S>> for &'a [T]
+impl<T, S> Mul<Polynomial<T, S>> for &[T]
 where
     T: Zero + Mul<T, Output = T> + Clone,
     S: Storage<T>,
