@@ -338,6 +338,11 @@ where
     ///
     /// Returns `None` if not even a constant polynomial fit is possible (i.e. if the iterator is empty).
     ///
+    /// # Warning
+    ///
+    /// Although this function does not explicitly prohibit integer types from being used, doing so is discouraged as
+    /// the likelyhood of incorrect results are high.
+    ///
     /// Based on:
     /// [P. A. Gorry, General least-squares smoothing and differentiation by the convolution (Savitzky-Golay) method, Anal. Chem., vol. 62, no. 6, pp. 570-573, Mar. 1990.](https://pubs.acs.org/doi/10.1021/ac00205a007)
     ///
@@ -372,6 +377,12 @@ where
     /// No solution exists if $W = 0$.
     ///
     /// Returns `None` if not even a constant polynomial fit is possible (i.e. if $\sum_{i=1}^N w_i = 0$).
+    ///
+    /// # Warning
+    ///
+    /// Although this function does not explicitly prohibit integer types from being used, doing so is discouraged as
+    /// the likelyhood of incorrect results are high.
+    ///
     /// # Examples
     ///
     /// ```
@@ -499,6 +510,11 @@ where
     /// [Lagrange polynomial]: https://en.wikipedia.org/wiki/Lagrange_polynomial
     ///
     /// Returns `None` if any two x-coordinates are the same.
+    ///
+    /// # Warning
+    ///
+    /// Although this function does not explicitly prohibit integer types from being used, doing so is discouraged as
+    /// the likelyhood of incorrect results are high.
     ///
     /// # Examples
     ///
