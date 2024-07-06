@@ -338,7 +338,22 @@ fn test_least_squares<S: Storage<f64>>() {
     check::<S>(5, xs.clone().map(|x| (x, x.ln_1p(), 1. - x)));
 
     assert_eq!(
-        Polynomial::<_, S>::least_squares_fit(1, [(0., 0.), (0., 1.)].into_iter()),
+        Polynomial::<_, S>::least_squares_fit(5, [(1.0, 1.0)].into_iter())
+            .unwrap()
+            .coeffs(),
+        &[1.0]
+    );
+
+    assert_eq!(
+        Polynomial::<_, S>::least_squares_fit(1, [].into_iter()),
+        None
+    );
+
+    assert_eq!(
+        Polynomial::<_, S>::least_squares_fit_weighted(
+            1,
+            [(1.0, 1.0, 1.0), (1.0, -1.0, -1.0)].into_iter()
+        ),
         None
     );
 }

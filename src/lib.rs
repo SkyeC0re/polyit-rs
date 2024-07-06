@@ -332,10 +332,11 @@ where
         + Clone,
     S: Storage<T> + Clone,
 {
-    /// Generates the polynomial $P(x)$ that fits a number of points `N` in a least squares sense which minimizes:
+    /// Generates a polynomial $P(x)$ of highest degree smaller than of equal to degree `deg` that fits a number of points `N`
+    /// in a least squares sense which minimizes:
     /// $$\sum_{i=1}^N\left[P(x_i) - y_i\right]^2$$
     ///
-    /// Returns `None` if a unique solution does not exist (such as if `deg < N + 1`).
+    /// Returns `None` if not even a constant polynomial fit is possible (i.e. if the iterator is empty).
     ///
     /// Based on:
     /// [P. A. Gorry, General least-squares smoothing and differentiation by the convolution (Savitzky-Golay) method, Anal. Chem., vol. 62, no. 6, pp. 570-573, Mar. 1990.](https://pubs.acs.org/doi/10.1021/ac00205a007)
@@ -364,12 +365,13 @@ where
     }
 
     /// Adapted from [least_squares_fit](fn@Polynomial::least_squares_fit) to allow for non-uniform fitting weights.
-    /// Generates the polynomial $P(x)$ that fits a number of points `N` in a least squares sense which minimizes:
+    /// Generates the polynomial $P(x)$ of highest degree smaller than or equal to degree `deg`
+    /// that uniquely fits a number of points `N` in a least squares sense which minimizes:
     /// $$\sum_{i=1}^N w_i \left[P(x_i) - y_i\right]^2$$
     /// when $W = \sum_{i=1}^N w_i$ is positive. If $W$ is negative it will instead maximize the above value.
     /// No solution exists if $W = 0$.
     ///
-    /// Returns `None` if a unique solution does not exist (such as if `deg < N + 1`).
+    /// Returns `None` if not even a constant polynomial fit is possible (i.e. if $\sum_{i=1}^N w_i = 0$).
     /// # Examples
     ///
     /// ```
@@ -386,7 +388,7 @@ where
     /// println!("{:.3}", poly);
     /// ```
     pub fn least_squares_fit_weighted(
-        deg: usize,
+        mut deg: usize,
         samples: impl Iterator<Item = (T, T, T)> + Clone,
     ) -> Option<Self> {
         let (mut d_0, gamma_0, mut b_0, data_len) = samples.clone().fold(
@@ -400,9 +402,11 @@ where
             },
         );
 
-        if data_len < deg + 1 || gamma_0.is_zero() {
+        if gamma_0.is_zero() {
             return None;
         }
+        // Impossible for `data_len` to be zero at this stage.
+        deg = deg.min(data_len - 1);
 
         b_0 = b_0 / gamma_0.clone();
         d_0 = d_0 / gamma_0.clone();
@@ -458,7 +462,7 @@ where
             );
 
             if gamma_kp1.is_zero() {
-                return None;
+                break;
             }
 
             d_kp1 = d_kp1 / gamma_kp1.clone();
