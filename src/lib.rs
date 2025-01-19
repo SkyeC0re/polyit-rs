@@ -2,7 +2,7 @@
 //! A no-std library for manipulating polynomials with slice support and minimal allocation (or no allocation).
 //!
 //! At the end of the day the classical representation method for the polynomial is
-//! its coefficients and this library leverages this by means of slices.  
+//! its coefficients and this library leverages this by means of slices.
 //! Take this example case:
 //! ```
 //! extern crate poly_it;
@@ -87,7 +87,6 @@
 #![warn(unused_import_braces)]
 #![warn(unused_qualifications)]
 #![warn(unused_results)]
-#![forbid(unsafe_code)]
 
 pub mod storage;
 
@@ -270,7 +269,10 @@ where
         let mut carry = T::zero();
         while i < data.len() {
             carry = carry + T::one();
-            data[i - 1] = carry.clone() * data[i].clone();
+            // Safety: `i` is larger than 1 and smaller than the amount of coefficients.
+            unsafe {
+                *data.get_unchecked_mut(i - 1) = carry.clone() * data.get_unchecked(i).clone();
+            }
             i += 1;
         }
 
@@ -301,12 +303,17 @@ where
 
         let mut i = 1;
         let mut carry = T::zero();
-        let mut ci = T::zero();
-        mem::swap(&mut ci, &mut data[0]);
+        let mut c_im1 = T::zero();
+        // Safety: `self` contains at least one coefficient.
+        mem::swap(&mut c_im1, unsafe { data.get_unchecked_mut(0) });
         while i < data.len() {
             carry = carry + T::one();
-            mem::swap(&mut ci, &mut data[i]);
-            data[i] = data[i].clone() / carry.clone();
+            // Safety: `i` never exceeds the number of coefficients in `self`.
+            let c_i_prime = unsafe { data.get_unchecked_mut(i) };
+
+            mem::swap(&mut c_im1, c_i_prime);
+            *c_i_prime = c_i_prime.clone() / carry.clone();
+
             i += 1;
         }
     }
@@ -438,7 +445,8 @@ where
         let mut p_k = p_k.as_mut_slice();
         let p_data_slice = p_data.as_mut_slice();
         p_data_slice[0] = d_0;
-        p_k[0] = T::one();
+        // Safety: `p_data` has `deg + 1` elements.
+        *unsafe { p_k.get_unchecked_mut(0) } = T::one();
 
         let mut gamma_k = gamma_0;
         let mut b_k = b_0;
@@ -446,21 +454,26 @@ where
         let mut kp1 = 1;
 
         loop {
-            // Overwrite p_{k-1} with p_{k+1}
-            for (p_km1i, p_ki) in p_km1[0..kp1].iter_mut().zip(p_k[0..kp1].iter().cloned()) {
-                *p_km1i = minus_c_k.clone() * p_km1i.clone() - b_k.clone() * p_ki;
+            // Overwrite $p_{k-1}$ with $p_{k+1}$
+            for i in 0..kp1 {
+                // Safety: `kp1 <= deg + 1`.
+                let p_km1i = unsafe { p_km1.get_unchecked_mut(i) };
+                *p_km1i = minus_c_k.clone() * p_km1i.clone()
+                    - b_k.clone() * unsafe { p_k.get_unchecked(i) }.clone();
             }
-            for (p_km1i, p_kim1) in p_km1[1..(kp1 + 1)]
-                .iter_mut()
-                .zip(p_k[0..kp1].iter().cloned())
-            {
-                *p_km1i = p_km1i.clone() + p_kim1;
+
+            for im1 in 0..kp1 {
+                // Safety: `kp1 <= deg`.
+                let p_km1i = unsafe { p_km1.get_unchecked_mut(im1 + 1) };
+                *p_km1i = p_km1i.clone() + unsafe { p_k.get_unchecked(im1) }.clone();
             }
 
             let (mut d_kp1, gamma_kp1, mut b_kp1) = samples.clone().fold(
                 (T::zero(), T::zero(), T::zero()),
                 |mut acc, (xi, yi, wi)| {
-                    let px = eval_slice_horner(&p_km1[0..(kp1 + 1)], xi.clone());
+                    // Safety: `kp1 <= deg`.
+                    let px =
+                        eval_slice_horner(unsafe { p_km1.get_unchecked(0..(kp1 + 1)) }, xi.clone());
                     let wipx = wi * px.clone();
                     acc.0 = acc.0 + yi * wipx.clone();
 
@@ -478,18 +491,17 @@ where
 
             d_kp1 = d_kp1 / gamma_kp1.clone();
 
-            for (pi, p_km1i) in p_data_slice
-                .iter_mut()
-                .zip(p_km1[0..(kp1 + 1)].iter().cloned())
-            {
-                *pi = pi.clone() + d_kp1.clone() * p_km1i;
+            for i in 0..(kp1 + 1) {
+                // Safety: `kp1 <= deg`.
+                let pi = unsafe { p_data_slice.get_unchecked_mut(i) };
+                *pi = pi.clone() + d_kp1.clone() * unsafe { p_km1.get_unchecked(i) }.clone();
             }
 
             if kp1 == deg {
                 break;
             }
 
-            // Delay the remaining work left for b_{k+1} until it is certain to be needed.
+            // Delay the remaining work left for $b_{k+1}$ until it is certain to be needed.
             b_kp1 = b_kp1 / gamma_kp1.clone();
 
             kp1 += 1;
@@ -814,7 +826,11 @@ where
             *pi = pi.clone() + si;
         }
         if other.len() > p_data.len() {
-            for si in other[p_data.len()..].iter().cloned() {
+            // Safety: `other` has at least as many coefficients as `self`.
+            for si in unsafe { other.get_unchecked(p_data.len()..) }
+                .into_iter()
+                .cloned()
+            {
                 p_data.push(si);
             }
         }
@@ -852,7 +868,11 @@ where
             *pi = pi.clone() - si;
         }
         if other.len() > p_data.len() {
-            for si in other[p_data.len()..].iter().cloned() {
+            // Safety: `other` has at least as many coefficients as `self`.
+            for si in unsafe { other.get_unchecked(p_data.len()..) }
+                .into_iter()
+                .cloned()
+            {
                 p_data.push(T::zero() - si);
             }
         }
@@ -878,11 +898,16 @@ where
             *pi = si - pi.clone();
         }
         if self.len() > p_data.len() {
-            for si in self[p_data.len()..].iter().cloned() {
+            // Safety: `self` has at least as many coefficients as `other`.
+            for si in unsafe { self.get_unchecked(p_data.len()..) }
+                .into_iter()
+                .cloned()
+            {
                 p_data.push(si);
             }
         } else {
-            for pi in &mut p_data.as_mut_slice()[self.len()..] {
+            // Safety: `other` has at least as many coefficients as `self`.
+            for pi in unsafe { p_data.as_mut_slice().get_unchecked_mut(self.len()..) } {
                 *pi = T::zero() - pi.clone();
             }
         }
@@ -912,9 +937,12 @@ where
                 return self;
             }
         };
-        let other = &other[1..];
 
-        data_slice[last_index] = ai.clone() * b0.clone();
+        // Safety: `other` is not empty.
+        let other = unsafe { other.get_unchecked(1..) };
+
+        // Safety: `data_slice` is not empty.
+        *unsafe { data_slice.get_unchecked_mut(last_index) } = ai.clone() * b0.clone();
         other
             .into_iter()
             .cloned()
@@ -922,12 +950,16 @@ where
 
         let data_slice = self.data.as_mut_slice();
         for i in (0..last_index).rev() {
-            ai = data_slice[i].clone();
-            data_slice[i] = ai.clone() * b0.clone();
-            data_slice[(i + 1)..]
-                .iter_mut()
-                .zip(other.into_iter().cloned())
-                .for_each(|(v, bj)| *v = v.clone() + ai.clone() * bj.clone());
+            // Safety: `last_index` is strictly smaller than the number of coefficients in `self`.
+            unsafe {
+                ai = data_slice.get_unchecked(i).clone();
+                *data_slice.get_unchecked_mut(i) = ai.clone() * b0.clone();
+                data_slice
+                    .get_unchecked_mut((i + 1)..)
+                    .iter_mut()
+                    .zip(other.into_iter().cloned())
+                    .for_each(|(v, bj)| *v = v.clone() + ai.clone() * bj.clone());
+            }
         }
         self.trim();
         self
@@ -966,7 +998,8 @@ where
             cutoff -= 1;
         }
 
-        let div_data = &other[..cutoff];
+        // Safety: `cutoff` does not exceed the number of elements in `other`.
+        let div_data = unsafe { other.get_unchecked(..cutoff) };
         let main_divisor = match div_data.last().filter(|_| div_data.len() <= rem_data.len()) {
             Some(v) => v.clone(),
             None => return (Polynomial::new(S::Provider::new().new_storage()), self),
@@ -977,8 +1010,12 @@ where
         );
 
         for i in (dd_lm1..rem_data.len()).rev() {
-            let val = rem_data[i].clone() / main_divisor.clone();
-            for (r, d) in rem_data[(i - dd_lm1)..=i].iter_mut().zip(div_data.iter()) {
+            // Safety: `other` has at least one non-zero element and `self` has at least as many elements as `other`.
+            let val = unsafe { rem_data.get_unchecked(i).clone() } / main_divisor.clone();
+            for (r, d) in unsafe { rem_data.get_unchecked_mut((i - dd_lm1)..=i) }
+                .iter_mut()
+                .zip(div_data.iter())
+            {
                 *r = r.clone() - val.clone() * d.clone()
             }
             ret.data.push(val);
